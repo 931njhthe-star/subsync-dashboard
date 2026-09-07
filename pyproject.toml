@@ -1,0 +1,20 @@
+[project]
+name = "subsync-dashboard"
+version = "0.1.0"
+description = "SubSync internal operations and analytics dashboard"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx",
+    "pandas>=3.0.5",
+    "streamlit>=1.63.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
