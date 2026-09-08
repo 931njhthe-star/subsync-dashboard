@@ -41,9 +41,38 @@ def test_display_frames_translate_headers_and_known_values() -> None:
     assert list(providers.columns) == ["제공자", "질문 수", "평균 응답시간 (밀리초)"]
     assert providers.loc[0, "제공자"] == "기본 응답"
 
+    usage_providers = provider_display_frame(
+        pd.DataFrame(
+            [
+                {
+                    "provider": "gemini",
+                    "model": "gemini-3.6-flash",
+                    "requests": 2,
+                    "input_tokens": 100,
+                    "output_tokens": 40,
+                    "total_tokens": 140,
+                    "avg_latency_ms": pd.NA,
+                }
+            ]
+        )
+    )
+    assert list(usage_providers.columns) == [
+        "제공자",
+        "모델",
+        "호출 수",
+        "입력 토큰",
+        "출력 토큰",
+        "총 토큰",
+        "평균 응답시간 (밀리초)",
+    ]
+    assert usage_providers.loc[0, "제공자"] == "제미나이"
+    assert usage_providers.loc[0, "입력 토큰"] == "100"
+    assert usage_providers.loc[0, "평균 응답시간 (밀리초)"] == "-"
+
 
 def test_system_log_values_are_translated_without_changing_filter_keys() -> None:
     assert event_type_label("tutor.ask") == "튜터 질문"
+    assert event_type_label("POST /api/v1/tutor/ask") == "튜터 질문 API"
     logs = system_log_display_frame(
         pd.DataFrame(
             [

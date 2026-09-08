@@ -19,7 +19,36 @@ def feedback_breakdown(data: DashboardData) -> pd.DataFrame:
 
 
 def provider_summary(data: DashboardData) -> pd.DataFrame:
-    """provider별 질문 수·평균 지연시간을 반환한다."""
+    """provider별 사용량 또는 legacy Tutor 메시지 성능을 반환한다."""
+
+    usage = data.llm_usage.copy()
+    if not usage.empty:
+        usage["provider"] = usage["provider"].fillna("").replace("", "unknown")
+        usage["model"] = usage["model_name"].fillna("").replace("", "unknown")
+        result = (
+            usage.groupby(["provider", "model"], as_index=False)
+            .agg(
+                requests=("id", "count"),
+                input_tokens=("input_tokens", lambda values: values.sum(min_count=1)),
+                output_tokens=("output_tokens", lambda values: values.sum(min_count=1)),
+                total_tokens=("total_tokens", lambda values: values.sum(min_count=1)),
+            )
+            .sort_values("requests", ascending=False)
+        )
+        # llm_usage와 api_logs 사이에 요청 correlation key가 없어 provider별
+        # latency를 임의로 결합하지 않는다. 화면에서는 미측정 상태를 '-'로 표시한다.
+        result["avg_latency_ms"] = pd.NA
+        return result[
+            [
+                "provider",
+                "model",
+                "requests",
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "avg_latency_ms",
+            ]
+        ].reset_index(drop=True)
 
     frame = data.tutor_messages.copy()
     if frame.empty:

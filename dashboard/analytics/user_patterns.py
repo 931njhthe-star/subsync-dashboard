@@ -15,6 +15,29 @@ def _event_day(frame: pd.DataFrame, column: str = "created_at") -> pd.Series:
     return frame[column].dt.strftime("%Y-%m-%d")
 
 
+def _tutor_activity_from_api_logs(data: DashboardData) -> pd.DataFrame:
+    """ai_conversations가 없을 때 api_logs에서 Tutor 질문 활동을 계산한다."""
+
+    logs = data.api_logs.copy()
+    if logs.empty or "api_name" not in logs:
+        return pd.DataFrame(columns=["date", "tutor_questions"])
+    names = logs["api_name"].astype(str).str.lower()
+    logs = logs.loc[names.str.contains("tutor/ask|tutor\\.ask", regex=True, na=False)].copy()
+    if logs.empty:
+        return pd.DataFrame(columns=["date", "tutor_questions"])
+    statuses = pd.to_numeric(logs.get("status_code"), errors="coerce")
+    success = logs.get("success")
+    if success is None:
+        success = statuses.lt(400)
+    else:
+        success = success.fillna(statuses.lt(400)).astype(bool)
+    logs = logs.loc[success].copy()
+    if logs.empty:
+        return pd.DataFrame(columns=["date", "tutor_questions"])
+    logs["date"] = logs["requested_at"].dt.strftime("%Y-%m-%d")
+    return logs.groupby("date", as_index=False).size().rename(columns={"size": "tutor_questions"})
+
+
 def daily_activity(data: DashboardData) -> pd.DataFrame:
     """날짜별 시청시간·단어 클릭·Tutor 질문 집계를 반환한다."""
 
@@ -35,13 +58,16 @@ def daily_activity(data: DashboardData) -> pd.DataFrame:
         clicks = pd.DataFrame(columns=["date", "word_clicks"])
 
     tutor = data.tutor_messages.copy()
+    if not tutor.empty and "sender" in tutor:
+        tutor["sender"] = tutor["sender"].astype(str).str.lower()
+        tutor = tutor[tutor["sender"].eq("user")].copy()
     if not tutor.empty:
         tutor["date"] = _event_day(tutor)
-        if "sender" in tutor:
-            tutor = tutor[tutor["sender"].astype(str).str.lower().eq("user")]
         tutor = tutor.groupby("date", as_index=False).size().rename(columns={"size": "tutor_questions"})
     else:
-        tutor = pd.DataFrame(columns=["date", "tutor_questions"])
+        # api_logs는 요청 관측값이고 ai_conversations는 대화 관측값이므로,
+        # 대화 row가 있는 경우에는 API log를 다시 더하지 않아 중복을 막는다.
+        tutor = _tutor_activity_from_api_logs(data)
 
     result = watch.merge(clicks, on="date", how="outer").merge(tutor, on="date", how="outer")
     if result.empty:

@@ -46,14 +46,19 @@ def _source_label(source: str) -> str:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def cached_data(source: str, json_path: str, supabase_url: str, supabase_key: str):
-    """Streamlit rerun 사이에 데이터 snapshot을 짧게 캐시한다."""
+def cached_data(source: str, json_path: str, supabase_url: str, supabase_key_configured: bool):
+    """Streamlit rerun 사이에 데이터 snapshot을 짧게 캐시한다.
 
+    원문 Supabase 키는 캐시 함수의 인자나 캐시 키에 넣지 않는다. 실제 키는
+    ``load_dashboard_data``가 서버 프로세스 환경에서만 읽는다.
+    """
+
+    # 설정 여부는 credential 유무가 바뀔 때 demo와 live 캐시 namespace를 구분하는 용도다.
+    _ = supabase_key_configured
     return load_dashboard_data(
         source,
         json_path=json_path or None,
         supabase_url=supabase_url or None,
-        supabase_key=supabase_key or None,
     )
 
 
@@ -68,25 +73,30 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.divider()
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key_configured = bool(os.getenv("SUPABASE_KEY", ""))
+    source_options = ["demo", "auto", "json", "supabase"]
+    configured_source = os.getenv("SUBSYNC_DASHBOARD_SOURCE", "").strip().lower()
+    if configured_source not in source_options:
+        configured_source = "auto" if supabase_url and supabase_key_configured else "demo"
     source = st.selectbox(
         "데이터 원천",
-        ["demo", "auto", "json", "supabase"],
-        index=0,
+        source_options,
+        index=source_options.index(configured_source),
         format_func=source_label,
     )
     json_path = st.text_input("자료 파일 경로", value="", disabled=source not in {"json", "demo"})
-    supabase_url = os.getenv("SUPABASE_URL", "")
-    supabase_key = os.getenv("SUPABASE_KEY", "")
     if source in {"auto", "supabase"}:
         st.caption("수파베이스 접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
-    st.caption("기본 모드는 로컬 샘플 자료입니다.")
+    if configured_source == "demo" and not (supabase_url and supabase_key_configured):
+        st.caption("기본 모드는 로컬 샘플 자료입니다.")
 
 try:
-    data = cached_data(source, json_path, supabase_url, supabase_key)
+    data = cached_data(source, json_path, supabase_url, supabase_key_configured)
     source_error = None
 except DashboardDataSourceError as exc:
     source_error = str(exc)
-    data = cached_data("demo", "", "", "")
+    data = cached_data("demo", "", "", False)
 
 if source_error:
     st.warning(f"외부 데이터 원천을 사용할 수 없어 샘플 데이터로 표시합니다: {source_error}")
@@ -96,8 +106,13 @@ for frame, column in [
     (data.video_history, "updated_at"),
     (data.click_events, "created_at"),
     (data.tutor_messages, "created_at"),
+    (data.saved_words, "created_at"),
+    (data.login_history, "login_at"),
+    (data.ai_conversations, "started_at"),
+    (data.llm_usage, "used_at"),
+    (data.api_logs, "requested_at"),
 ]:
-    if not frame.empty and frame[column].notna().any():
+    if not frame.empty and column in frame and frame[column].notna().any():
         available_dates.extend(frame[column].dropna().dt.date.tolist())
 
 max_date = max(available_dates) if available_dates else date.today()
@@ -176,7 +191,7 @@ elif page == "Learning Activity":
 
 elif page == "Tutor Quality":
     st.markdown("### 튜터 품질")
-    st.caption("튜터 응답 만족도와 제공자별 지연시간을 확인합니다.")
+    st.caption("튜터 만족도, 제공자·모델 사용량, 전체 튜터 API 응답시간을 확인합니다.")
     quality_left, quality_right = st.columns(2)
     with quality_left:
         st.metric("도움됨 비율", "-" if metrics["tutor_helpful_rate"] is None else f"{metrics['tutor_helpful_rate']:.1f}%")
@@ -188,7 +203,7 @@ elif page == "Tutor Quality":
 
 else:
     st.markdown("### 시스템 로그")
-    st.caption("백엔드·자막·튜터 이벤트의 상태와 지연시간을 확인합니다.")
+    st.caption("백엔드 API 요청의 상태 코드·응답시간·오류를 확인합니다.")
     render_logs(filtered_data.system_logs)
 
 st.divider()

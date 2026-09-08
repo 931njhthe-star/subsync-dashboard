@@ -21,6 +21,72 @@ def test_dashboard_demo_mode_renders_without_streamlit_exception() -> None:
     assert app.sidebar.selectbox[0].options == ["샘플 데이터", "자동 선택", "자료 파일", "수파베이스"]
 
 
+def test_dashboard_supabase_shaped_payload_renders_without_exception(monkeypatch) -> None:
+    rows_by_table = {
+        "users": [
+            {
+                "id": "user-1",
+                "created_at": "2026-09-08T00:00:00Z",
+                "last_login_at": "2026-09-08T00:01:00Z",
+            }
+        ],
+        "login_history": [],
+        "saved_words": [],
+        "ai_conversations": [],
+        "llm_usage": [],
+        "api_logs": [
+            {
+                "id": "api-1",
+                "api_name": "POST /api/v1/tutor/ask",
+                "user_id": "user-1",
+                "requested_at": "2026-09-08T00:02:00Z",
+                "response_time_ms": 120,
+                "status_code": 200,
+                "success": True,
+                "error_message": None,
+            }
+        ],
+    }
+
+    class FakeResponse:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def get(self, url, *, params, headers):
+            table = url.rsplit("/", 1)[-1]
+            offset = int(params["offset"])
+            limit = int(params["limit"])
+            return FakeResponse(rows_by_table[table][offset : offset + limit])
+
+    import httpx
+
+    monkeypatch.setenv("SUBSYNC_DASHBOARD_SOURCE", "supabase")
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_KEY", "mock-key")
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+
+    app = AppTest.from_file(str(DASHBOARD_APP)).run(timeout=30)
+
+    assert not app.exception
+    assert app.sidebar.selectbox[0].value == "supabase"
+    assert any("수파베이스" in item.value for item in app.markdown)
+
+
 def test_dashboard_script_imports_when_launched_from_project_root() -> None:
     """루트에서 Streamlit이 dashboard 폴더만 sys.path에 넣어도 실행된다."""
 

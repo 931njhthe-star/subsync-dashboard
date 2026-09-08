@@ -38,6 +38,10 @@ EVENT_TYPE_LABELS: Mapping[str, str] = {
     "word.save": "단어 저장",
     "history.update": "시청 기록 갱신",
     "system.error": "시스템 오류",
+    "post /api/v1/tutor/ask": "튜터 질문 API",
+    "post /api/v1/tutor/proactive": "튜터 알림 API",
+    "post /api/v1/tutor/feedback": "튜터 평가 API",
+    "get /api/v1/dict/hover": "단어 조회 API",
 }
 
 RATING_LABELS: Mapping[str, str] = {
@@ -58,6 +62,8 @@ LOG_MESSAGE_LABELS: Mapping[str, str] = {
     "Tutor response completed": "튜터 응답 완료",
     "Caption source loaded": "자막 원천 불러옴",
     "Provider quota fallback": "제공자 할당량 초과로 대체 응답 사용",
+    "API request completed": "API 요청 완료",
+    "API request failed": "API 요청 실패",
 }
 
 TABLE_COLUMN_LABELS: Mapping[str, Mapping[str, str]] = {
@@ -86,7 +92,12 @@ TABLE_COLUMN_LABELS: Mapping[str, Mapping[str, str]] = {
     },
     "providers": {
         "provider": "제공자",
+        "model": "모델",
         "questions": "질문 수",
+        "requests": "호출 수",
+        "input_tokens": "입력 토큰",
+        "output_tokens": "출력 토큰",
+        "total_tokens": "총 토큰",
         "avg_latency_ms": "평균 응답시간 (밀리초)",
     },
     "logs": {
@@ -171,6 +182,16 @@ def provider_display_frame(frame: pd.DataFrame) -> pd.DataFrame:
     display = translate_frame_columns(frame, "providers")
     if "제공자" in display:
         display["제공자"] = display["제공자"].map(provider_label)
+    for column in ("입력 토큰", "출력 토큰", "총 토큰"):
+        if column in display:
+            display[column] = display[column].map(
+                lambda value: "-" if pd.isna(value) else f"{int(value):,}"
+            )
+    latency_column = "평균 응답시간 (밀리초)"
+    if latency_column in display:
+        display[latency_column] = display[latency_column].map(
+            lambda value: "-" if pd.isna(value) else round(float(value), 1)
+        )
     return display
 
 
