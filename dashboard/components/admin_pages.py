@@ -19,6 +19,12 @@ MODEL_LABELS = {
     "openai/gpt-oss-20b": "GPT-OSS 20B",
     "gpt-oss-20b": "GPT-OSS 20B",
 }
+ENDPOINT_DESCRIPTIONS: Mapping[str, str] = {
+    "post /api/v1/tutor/ask": "사용자가 질문을 보냈을 때 튜터 답변을 생성하는 요청",
+    "post /api/v1/tutor/proactive": "사용자 질문 없이 학습 상황에 맞는 튜터 도움말을 먼저 생성하는 요청",
+    "post /api/v1/tutor/feedback": "튜터 답변에 대한 사용자의 평가를 저장하는 요청",
+    "get /api/v1/dict/hover": "단어에 마우스를 올렸을 때 뜻·품사·예문을 조회하는 요청",
+}
 
 
 def _missing(value: object) -> bool:
@@ -532,6 +538,30 @@ def _api_endpoint_text(value: object) -> str:
     return endpoint or "API 요청"
 
 
+def _api_endpoint_description(value: object) -> str:
+    """엔드포인트가 발생하는 사용자 상황을 관리자용 설명으로 반환한다."""
+
+    endpoint = _api_endpoint_text(value)
+    normalized = endpoint.strip().lower()
+    if normalized in ENDPOINT_DESCRIPTIONS:
+        return ENDPOINT_DESCRIPTIONS[normalized]
+    if "tutor/proactive" in normalized:
+        return "사용자 질문 없이 학습 상황에 맞는 튜터 도움말을 먼저 생성하는 요청"
+    if "tutor/ask" in normalized:
+        return "사용자가 질문을 보냈을 때 튜터 답변을 생성하는 요청"
+    if "tutor/feedback" in normalized:
+        return "튜터 답변에 대한 사용자의 평가를 저장하는 요청"
+    if "dict/hover" in normalized:
+        return "단어에 마우스를 올렸을 때 뜻·품사·예문을 조회하는 요청"
+    if normalized.startswith("get "):
+        return "화면에 필요한 데이터를 조회하는 요청"
+    if normalized.startswith(("post ", "put ", "patch ")):
+        return "사용자 동작이나 입력을 서버에서 처리하는 요청"
+    if normalized.startswith("delete "):
+        return "사용자가 삭제한 데이터를 서버에서 처리하는 요청"
+    return "서비스 기능에서 발생한 API 요청"
+
+
 def _api_status_text(value: object, success: bool) -> str:
     """HTTP 상태 코드를 관리자용 상태 라벨로 변환한다."""
 
@@ -675,6 +705,20 @@ def render_api_calls(data: DashboardData) -> None:
             st.metric(label, value)
 
     st.markdown("#### 엔드포인트별 호출량")
+    endpoint_counts = frame["_endpoint"].value_counts().sort_values(ascending=False)
+    if endpoint_counts.empty:
+        st.info("엔드포인트 호출량 데이터가 없습니다.")
+    else:
+        visible_endpoint_counts = endpoint_counts.head(3)
+        _render_usage_bar_chart(
+            visible_endpoint_counts,
+            show_share=True,
+            descriptions={
+                endpoint: _api_endpoint_description(endpoint)
+                for endpoint in visible_endpoint_counts.index
+            },
+        )
+
     endpoint_summary = _api_endpoint_summary(frame)
     st.dataframe(
         endpoint_summary,
@@ -788,8 +832,13 @@ def _usage_summary_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["항목", "값", "소스"])
 
 
-def _render_usage_bar_chart(counts: pd.Series, *, show_share: bool = False) -> None:
-    """제공자·모델별 호출 수를 가로로 읽기 쉬운 막대 차트로 표시한다."""
+def _render_usage_bar_chart(
+    counts: pd.Series,
+    *,
+    show_share: bool = False,
+    descriptions: Mapping[str, str] | None = None,
+) -> None:
+    """제공자·모델·엔드포인트별 호출 수를 가로 막대로 표시한다."""
 
     max_count = max(float(counts.max()), 1.0)
     total_count = max(float(counts.sum()), 1.0)
@@ -801,10 +850,16 @@ def _render_usage_bar_chart(counts: pd.Series, *, show_share: bool = False) -> N
         value = f"{int(numeric_count):,}건"
         if show_share:
             value = f"{value} · {share:.0f}%"
+        description = "" if descriptions is None else descriptions.get(str(label), "")
+        label_markup = escape(str(label))
+        if description:
+            label_markup += (
+                f'<div class="subsync-model-chart-description">{escape(description)}</div>'
+            )
         rows.append(
             f'''
             <div class="subsync-model-chart-row">
-              <div class="subsync-model-chart-label">{escape(str(label))}</div>
+              <div class="subsync-model-chart-label">{label_markup}</div>
               <div class="subsync-model-chart-track"><div class="subsync-model-chart-bar" style="width: {bar_width:.2f}%"></div></div>
               <div class="subsync-model-chart-value">{escape(value)}</div>
             </div>

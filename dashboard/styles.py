@@ -122,6 +122,7 @@ div[role="radiogroup"] > label > div:first-child { display: none; }
 .subsync-model-chart-rows { display: flex; flex-direction: column; gap: 1.15rem; padding: 1.2rem 0 1rem; }
 .subsync-model-chart-row { align-items: center; display: grid; gap: .65rem; grid-template-columns: minmax(8.5rem, 11rem) minmax(0, 1fr) minmax(5.5rem, 7rem); }
 .subsync-model-chart-label { color: #52677e; font-size: .74rem; line-height: 1.25; overflow-wrap: anywhere; }
+.subsync-model-chart-description { -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: #8b98a8; display: -webkit-box; font-size: .6rem; line-height: 1.3; margin-top: .18rem; overflow: hidden; }
 .subsync-model-chart-track { background: #eef2f6; border-radius: .25rem; height: 2.1rem; overflow: hidden; }
 .subsync-model-chart-bar { background: #4679b2; border-radius: .25rem; height: 100%; min-width: .25rem; }
 .subsync-model-chart-value { color: #425b75; font-size: .68rem; font-weight: 700; text-align: right; white-space: nowrap; }
