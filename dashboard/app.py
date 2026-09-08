@@ -59,12 +59,10 @@ from dashboard.analytics.data_loader import (
     summarize_metrics,
 )
 from dashboard.components.admin_pages import (
+    render_api_calls,
     render_ai_usage,
-    render_conversation_history,
-    render_user_management,
-    render_word_management,
 )
-from dashboard.components.display_labels import page_label, source_label
+from dashboard.components.display_labels import page_label
 from dashboard.components.home_dashboard import render_home_dashboard
 from dashboard.styles import inject_styles
 
@@ -78,10 +76,7 @@ st.set_page_config(
 inject_styles()
 
 
-def _source_label(source: str) -> str:
-    """내부 source 값을 사용자용 label로 변환한다."""
-
-    return source_label(source)
+PAGE_OPTIONS = ["Dashboard", "AI Usage", "API Calls"]
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -113,18 +108,17 @@ with st.sidebar:
     )
     page = st.radio(
         "화면",
-        ["Dashboard", "User Management", "AI Conversations", "Word Management", "AI Usage"],
+        PAGE_OPTIONS,
         format_func=page_label,
         label_visibility="collapsed",
+        key="page",
     )
     st.divider()
-    supabase_url = os.getenv("SUPABASE_URL", "")
-    supabase_key_configured = bool(
-        os.getenv("SUPABASE_SECRET_KEY", "") or os.getenv("SUPABASE_KEY", "")
-    )
-    st.markdown("**데이터 원천**")
-    st.caption("수파베이스 (고정)")
-    st.caption("접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
+
+supabase_url = os.getenv("SUPABASE_URL", "")
+supabase_key_configured = bool(
+    os.getenv("SUPABASE_SECRET_KEY", "") or os.getenv("SUPABASE_KEY", "")
+)
 
 try:
     data = cached_data(supabase_url, supabase_key_configured)
@@ -172,7 +166,6 @@ st.markdown(
         <div class="subsync-title">학습 흐름을 한눈에 확인하세요.</div>
         <div class="subsync-subtitle">영상 시청, 단어 학습, 비디오 튜터 품질을 하나의 화면에서 확인합니다.</div>
       </div>
-      <div class="subsync-source">{_source_label(data.source)}</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -180,12 +173,8 @@ st.markdown(
 
 if page == "Dashboard":
     render_home_dashboard(data, metrics)
-elif page == "User Management":
-    render_user_management(filtered_data)
-elif page == "AI Conversations":
-    render_conversation_history(filtered_data)
-elif page == "Word Management":
-    render_word_management(filtered_data)
+elif page == "API Calls":
+    render_api_calls(filtered_data)
 else:
     render_ai_usage(filtered_data, metrics)
 

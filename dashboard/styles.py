@@ -27,7 +27,6 @@ DASHBOARD_CSS = """
 .subsync-eyebrow { color: #7fa8ff; font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
 .subsync-title { color: #f8fafc; font-size: 2rem; line-height: 1.1; font-weight: 800; margin-top: .35rem; }
 .subsync-subtitle { color: #94a3b8; margin-top: .45rem; font-size: .92rem; }
-.subsync-source { color: #bfdbfe; background: rgba(63,127,245,.14); border: 1px solid rgba(96,165,250,.28); border-radius: 999px; padding: .45rem .72rem; font-size: .78rem; white-space: nowrap; }
 .subsync-kpi-card {
   min-height: 126px; padding: 1.1rem 1.2rem; border-radius: 20px;
   border: 1px solid rgba(148,163,184,.16); background: rgba(15,28,48,.78);
@@ -84,7 +83,6 @@ div[role="radiogroup"] > label > div:first-child { display: none; }
 .subsync-eyebrow { color: var(--subsync-blue); font-size: .63rem; font-weight: 700; letter-spacing: .13em; margin-top: .7rem; text-transform: uppercase; }
 .subsync-title { color: var(--subsync-ink); font-size: 1.45rem; font-weight: 800; letter-spacing: -.04em; line-height: 1.15; margin-top: .35rem; }
 .subsync-subtitle { color: #748296; font-size: .78rem; margin-top: .42rem; }
-.subsync-source { background: #f2f6fb; border: 1px solid #dce7f2; border-radius: 999px; color: #557191; font-size: .7rem; padding: .4rem .65rem; white-space: nowrap; }
 
 .subsync-page-heading { align-items: center; display: flex; gap: .7rem; margin: .1rem 0 .85rem; }
 .subsync-heading-number { align-items: center; background: #353d46; border-radius: 50%; color: #fff; display: flex; flex: 0 0 2rem; font-size: 1rem; font-weight: 700; height: 2rem; justify-content: center; width: 2rem; }
@@ -117,6 +115,24 @@ div[role="radiogroup"] > label > div:first-child { display: none; }
 .subsync-health-note.ok strong, .subsync-health-note.ok .subsync-callout-mark { color: #39805a; }
 .subsync-health-note.neutral { background: #f1f5f9; border-color: #d7e0ea; color: #66758a; }
 .subsync-health-note.neutral strong, .subsync-health-note.neutral .subsync-callout-mark { color: #506b88; }
+.subsync-latest-status { align-items: center; background: #edf4fd; border: 1px solid #d9e7f8; border-radius: .55rem; color: #46678e; display: flex; gap: .6rem; margin: .45rem 0 .7rem; padding: .55rem .75rem; }
+.subsync-latest-status strong { color: #2e5c91; font-size: .72rem; }
+.subsync-latest-status span { background: #fff; border: 1px solid #c9dced; border-radius: .35rem; color: #1f4f83; font-size: .78rem; font-weight: 800; padding: .18rem .45rem; }
+.subsync-model-usage-chart, .subsync-daily-token-chart { background: #fff; border: 1px solid var(--subsync-line-soft); border-radius: .45rem; min-height: 16rem; padding: 1rem .85rem .55rem; }
+.subsync-model-chart-rows { display: flex; flex-direction: column; gap: 1.15rem; padding: 1.2rem 0 1rem; }
+.subsync-model-chart-row { align-items: center; display: grid; gap: .65rem; grid-template-columns: minmax(8.5rem, 11rem) minmax(0, 1fr) minmax(5.5rem, 7rem); }
+.subsync-model-chart-label { color: #52677e; font-size: .74rem; line-height: 1.25; overflow-wrap: anywhere; }
+.subsync-model-chart-track { background: #eef2f6; border-radius: .25rem; height: 2.1rem; overflow: hidden; }
+.subsync-model-chart-bar { background: #4679b2; border-radius: .25rem; height: 100%; min-width: .25rem; }
+.subsync-model-chart-value { color: #425b75; font-size: .68rem; font-weight: 700; text-align: right; white-space: nowrap; }
+.subsync-chart-axis-title { border-top: 1px solid #dce5ee; color: #6f7e90; font-size: .7rem; margin: 0 7.7rem 0 11.2rem; padding-top: .45rem; text-align: center; }
+.subsync-daily-token-chart svg { display: block; height: 16rem; overflow: visible; width: 100%; }
+.subsync-svg-grid { stroke: #e1e8f0; stroke-width: 1; }
+.subsync-svg-y-label, .subsync-svg-x-label { fill: #718096; font-family: Inter, "Noto Sans KR", "Malgun Gothic", sans-serif; font-size: 12px; }
+.subsync-svg-axis-title { fill: #6f7e90; font-family: Inter, "Noto Sans KR", "Malgun Gothic", sans-serif; font-size: 12px; }
+.subsync-svg-line { fill: none; stroke: #3f6fa8; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.subsync-svg-point { fill: #3f6fa8; stroke: #fff; stroke-width: 2; }
+@media (max-width: 800px) { .subsync-model-chart-row { grid-template-columns: minmax(6.5rem, 8rem) minmax(0, 1fr) minmax(5rem, 6.5rem); } .subsync-chart-axis-title { margin-left: 8.2rem; margin-right: 7.2rem; } }
 
 .subsync-home-panel { background: #fff; border: 1px solid var(--subsync-line); border-radius: .65rem; overflow: hidden; }
 .subsync-panel-head { align-items: center; border-bottom: 1px solid var(--subsync-line-soft); display: flex; justify-content: space-between; padding: .75rem .85rem .65rem; }
