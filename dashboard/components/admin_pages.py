@@ -50,6 +50,20 @@ def _latency_text(value: object) -> str:
         return "-"
 
 
+def _latency_precise_text(value: object) -> str:
+    """관리자 KPI와 상세 표에 응답시간의 실제 단위를 함께 표시한다."""
+
+    if _missing(value):
+        return "-"
+    try:
+        milliseconds = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if milliseconds >= 1_000:
+        return f"{milliseconds / 1_000:.2f}s ({milliseconds:,.0f}ms)"
+    return f"{milliseconds:,.0f}ms"
+
+
 def _column(frame: pd.DataFrame, name: str) -> pd.Series:
     """없는 컬럼도 같은 index의 빈 Series로 반환한다."""
 
@@ -312,10 +326,195 @@ def render_word_management(data: DashboardData) -> None:
     st.dataframe(display.reset_index(drop=True), width="stretch", hide_index=True)
 
 
-def render_ai_usage(data: DashboardData) -> None:
-    """모델별 호출·토큰 사용량과 일별 추이를 표시한다."""
+def _api_health(data: DashboardData) -> dict[str, object]:
+    """api_logs에서 오류율·P95 응답시간·최근 상태를 계산한다."""
+
+    logs = data.api_logs.copy()
+    if logs.empty:
+        return {
+            "status": "데이터 없음",
+            "error_rate": None,
+            "p95_ms": None,
+            "request_count": 0,
+            "failure_count": 0,
+            "latest_failure_at": None,
+            "latest_failure_api": None,
+            "latest_failure_status": None,
+        }
+
+    statuses = pd.to_numeric(_column(logs, "status_code"), errors="coerce")
+    observed = statuses.notna().astype(bool)
+    failures = statuses.ge(400).fillna(False).astype(bool)
+    if "success" in logs:
+        success_values = _column(logs, "success").astype("boolean")
+        observed |= success_values.notna().astype(bool)
+        failures |= success_values.eq(False).fillna(False).astype(bool)
+
+    request_count = int(observed.sum())
+    failure_mask = failures & observed
+    failure_count = int(failure_mask.sum())
+    error_rate = (
+        None
+        if request_count == 0
+        else round(float(failure_count / request_count * 100), 1)
+    )
+
+    response_times = pd.to_numeric(
+        _column(logs, "response_time_ms"), errors="coerce"
+    ).dropna()
+    p95_ms = None if response_times.empty else round(float(response_times.quantile(0.95)), 1)
+
+    ordered = logs.assign(
+        _requested_at=pd.to_datetime(
+            _column(logs, "requested_at"), errors="coerce", utc=True
+        )
+    ).sort_values("_requested_at", na_position="last")
+    latest_failure = ordered.loc[
+        failure_mask.reindex(ordered.index, fill_value=False)
+    ]
+    latest_failure_at = None
+    latest_failure_api = None
+    latest_failure_status = None
+    if not latest_failure.empty:
+        failure_row = latest_failure.iloc[-1]
+        latest_failure_at = failure_row.get("_requested_at")
+        latest_failure_api = _text(failure_row.get("api_name"), "API 요청")
+        raw_status = failure_row.get("status_code")
+        if not _missing(raw_status):
+            try:
+                latest_failure_status = f"HTTP {int(float(raw_status))}"
+            except (TypeError, ValueError):
+                latest_failure_status = _text(raw_status)
+        elif not _missing(failure_row.get("success")):
+            latest_failure_status = "success=false"
+
+    status = "데이터 없음" if request_count == 0 else "주의" if failure_count else "정상"
+    return {
+        "status": status,
+        "error_rate": error_rate,
+        "p95_ms": p95_ms,
+        "request_count": request_count,
+        "failure_count": failure_count,
+        "latest_failure_at": latest_failure_at,
+        "latest_failure_api": latest_failure_api,
+        "latest_failure_status": latest_failure_status,
+    }
+
+
+def _refresh_text(value: object) -> str:
+    """데이터 snapshot 생성 시각을 관리자용 문자열로 표시한다."""
+
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    return "-" if pd.isna(parsed) else parsed.strftime("%Y.%m.%d %H:%M UTC")
+
+
+def _render_health_panel(data: DashboardData) -> dict[str, object]:
+    """Supabase·AI API 상태와 마지막 갱신 시각을 표시한다."""
+
+    api_health = _api_health(data)
+    supabase_status = "정상" if data.source == "supabase" else "확인 필요"
+    request_count = int(api_health["request_count"])
+    failure_count = int(api_health["failure_count"])
+    api_detail = (
+        f"오류 {failure_count:,}건 / {request_count:,}건"
+        if request_count
+        else "api_logs 데이터 없음"
+    )
+    cards = [
+        ("Supabase 연결", supabase_status, "Data API"),
+        ("AI API 상태", str(api_health["status"]), api_detail),
+        ("마지막 갱신", _refresh_text(data.generated_at), "현재 snapshot"),
+    ]
+    markup = []
+    for label, value, detail in cards:
+        tone = "ok" if value == "정상" else "warn" if value in {"주의", "확인 필요"} else "neutral"
+        markup.append(
+            f'<div class="subsync-health-card {tone}"><div class="subsync-health-label">{escape(label)}</div><div class="subsync-health-value">{escape(value)}</div><div class="subsync-health-detail">{escape(detail)}</div></div>'
+        )
+    st.markdown(
+        f'<div class="subsync-health-grid">{"".join(markup)}</div>',
+        unsafe_allow_html=True,
+    )
+    if api_health["status"] == "주의":
+        error_rate = api_health["error_rate"]
+        latest_api = escape(_text(api_health["latest_failure_api"], "API 요청"))
+        latest_status = escape(_text(api_health["latest_failure_status"], "실패 응답"))
+        latest_at = _refresh_text(api_health["latest_failure_at"])
+        st.markdown(
+            "<div class=\"subsync-health-note warning\">"
+            "<span class=\"subsync-callout-mark\">!</span>"
+            f"<div><strong>AI API 주의:</strong> 선택한 조회 기간에 "
+            f"{failure_count:,}건/{request_count:,}건의 실패가 확인되었습니다 "
+            f"(오류율 {float(error_rate):.1f}%). "
+            f"최근 실패는 {latest_api} · {latest_status} · {latest_at}입니다.</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    elif api_health["status"] == "정상":
+        st.markdown(
+            f'<div class="subsync-health-note ok"><span class="subsync-callout-mark">✓</span>'
+            f'<div><strong>AI API 정상:</strong> 선택한 조회 기간의 {request_count:,}건 요청에서 실패가 확인되지 않았습니다.</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="subsync-health-note neutral"><span class="subsync-callout-mark">i</span>'
+            '<div><strong>AI API 확인 불가:</strong> 선택한 조회 기간에 판단할 api_logs가 없습니다.</div></div>',
+            unsafe_allow_html=True,
+        )
+    return api_health
+
+
+def _number_text(value: object) -> str:
+    """토큰 수를 천 단위 구분 문자열로 표시한다."""
+
+    if _missing(value):
+        return "-"
+    try:
+        return f"{int(float(value)):,}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _success_text(value: object) -> str:
+    """llm_usage의 finish_reason을 성공 여부 라벨로 바꾼다."""
+
+    if _missing(value) or not str(value).strip():
+        return "-"
+    reason = str(value).strip().lower()
+    failure_words = {"error", "failed", "failure", "cancelled", "canceled", "timeout"}
+    return "실패" if reason in failure_words or any(word in reason for word in failure_words) else "성공"
+
+
+def _usage_detail_frame(frame: pd.DataFrame, data: DashboardData) -> pd.DataFrame:
+    """llm_usage 원본을 관리자용 상세 요청 내역으로 변환한다."""
+
+    directory = _user_directory(data)
+    return pd.DataFrame(
+        {
+            "사용자": _column(frame, "user_id").map(
+                lambda value: directory.get(str(value), _text(value, "알 수 없는 사용자"))
+            ),
+            "모델": _column(frame, "model_name").map(lambda value: _text(value, "-")),
+            "입력 토큰": _column(frame, "input_tokens").map(_number_text),
+            "출력 토큰": _column(frame, "output_tokens").map(_number_text),
+            "총 토큰": _column(frame, "total_tokens").map(_number_text),
+            "응답 시간": _column(frame, "provider_latency").map(_latency_precise_text),
+            "성공 여부": _column(frame, "finish_reason").map(_success_text),
+            "일시": _column(frame, "used_at").map(_date_text),
+        },
+        index=frame.index,
+    )
+
+
+def render_ai_usage(
+    data: DashboardData,
+    metrics: Mapping[str, object] | None = None,
+) -> None:
+    """모델별 사용량과 관리자용 시스템 상태·상세 요청 내역을 표시한다."""
 
     _heading(5, "AI 사용량", "모델별 사용 현황 및 토큰 모니터링")
+    api_health = _render_health_panel(data)
     frame = data.llm_usage.copy()
     if frame.empty:
         st.info("AI 사용량 데이터가 없습니다.")
@@ -338,15 +537,18 @@ def render_ai_usage(data: DashboardData) -> None:
     if selected_provider != "전체 모델":
         frame = frame.loc[frame["_provider"].eq(selected_provider)].copy()
 
+    error_rate_value = api_health["error_rate"]
+    if _missing(error_rate_value) and metrics:
+        error_rate_value = metrics.get("error_rate")
+    error_rate_text = "-" if _missing(error_rate_value) else f"{float(error_rate_value):.1f}%"
+    p95_text = _latency_precise_text(api_health["p95_ms"])
     total_requests = len(frame)
     total_tokens = int(frame["total_tokens"].sum())
-    input_tokens = int(frame["input_tokens"].sum())
-    output_tokens = int(frame["output_tokens"].sum())
-    metrics = st.columns(4, gap="small")
+    metric_columns = st.columns(4, gap="small")
     for column, label, value in zip(
-        metrics,
-        ("총 요청 수", "총 토큰 수", "입력 토큰", "출력 토큰"),
-        (f"{total_requests:,}", f"{total_tokens:,}", f"{input_tokens:,}", f"{output_tokens:,}"),
+        metric_columns,
+        ("총 요청 수", "총 토큰 수", "오류율", "P95 응답시간"),
+        (f"{total_requests:,}", f"{total_tokens:,}", error_rate_text, p95_text),
     ):
         with column:
             st.metric(label, value)
@@ -392,8 +594,13 @@ def render_ai_usage(data: DashboardData) -> None:
         }
     )
     for column in ("호출 수", "입력 토큰", "출력 토큰", "총 토큰"):
-        summary[column] = summary[column].map(lambda value: f"{int(value):,}")
+        summary[column] = summary[column].map(_number_text)
     st.dataframe(summary.reset_index(drop=True), width="stretch", hide_index=True)
+
+    st.markdown("#### 상세 요청 내역")
+    st.caption("응답시간과 성공 여부는 llm_usage의 provider_latency·finish_reason 기준입니다.")
+    detail = _usage_detail_frame(frame, data)
+    st.dataframe(detail.reset_index(drop=True), width="stretch", hide_index=True)
 
 
 __all__ = [

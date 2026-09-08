@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -116,6 +116,8 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "output_tokens",
         "total_tokens",
         "used_at",
+        "finish_reason",
+        "provider_latency",
     ),
     "api_logs": (
         "id",
@@ -148,7 +150,7 @@ NUMERIC_COLUMNS: dict[str, tuple[str, ...]] = {
     "click_events": ("timestamp",),
     "tutor_messages": ("timestamp", "latency_ms"),
     "system_logs": ("status_code", "latency_ms"),
-    "llm_usage": ("input_tokens", "output_tokens", "total_tokens"),
+    "llm_usage": ("input_tokens", "output_tokens", "total_tokens", "provider_latency"),
     "api_logs": ("response_time_ms", "status_code"),
 }
 
@@ -179,6 +181,8 @@ SUPABASE_SELECT_COLUMNS: dict[str, tuple[str, ...]] = {
         "output_tokens",
         "total_tokens",
         "used_at",
+        "finish_reason",
+        "provider_latency",
     ),
     "api_logs": (
         "id",
@@ -622,6 +626,7 @@ def load_supabase_data(
     except httpx.HTTPError as exc:
         raise DashboardDataSourceError("Supabase 네트워크 요청에 실패했습니다.") from exc
 
+    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     return dashboard_data_from_payload(payload, source="supabase")
 
 

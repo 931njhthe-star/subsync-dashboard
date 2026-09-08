@@ -187,7 +187,7 @@ elif page == "AI Conversations":
 elif page == "Word Management":
     render_word_management(filtered_data)
 else:
-    render_ai_usage(filtered_data)
+    render_ai_usage(filtered_data, metrics)
 
 st.divider()
 st.caption("SubSync 관리자 대시보드 · 서버 환경변수로 연결된 운영 데이터")

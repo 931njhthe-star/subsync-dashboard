@@ -100,6 +100,24 @@ div[role="radiogroup"] > label > div:first-child { display: none; }
 .subsync-callout strong { color: #2e5c91; }
 .subsync-callout-mark { color: #3f6fa8; font-size: 1rem; }
 
+.subsync-health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin: .8rem 0 1rem; }
+.subsync-health-card { background: #fff; border: 1px solid var(--subsync-line); border-radius: .6rem; padding: .75rem .85rem; }
+.subsync-health-card.ok { border-left: 3px solid #4f9d78; }
+.subsync-health-card.warn { border-left: 3px solid #d99b3c; }
+.subsync-health-card.neutral { border-left: 3px solid #8aa0b8; }
+.subsync-health-label { color: #68788d; font-size: .68rem; }
+.subsync-health-value { color: #182536; font-size: 1rem; font-weight: 800; margin-top: .35rem; }
+.subsync-health-detail { color: #8794a5; font-size: .62rem; margin-top: .2rem; }
+@media (max-width: 800px) { .subsync-health-grid { grid-template-columns: 1fr; } }
+.subsync-health-note { align-items: flex-start; border: 1px solid; border-radius: .6rem; display: flex; font-size: .72rem; gap: .55rem; line-height: 1.55; margin: .8rem 0 1rem; padding: .65rem .8rem; }
+.subsync-health-note strong { font-weight: 800; }
+.subsync-health-note.warning { background: #fff7e8; border-color: #f0d49b; color: #7d5b18; }
+.subsync-health-note.warning strong, .subsync-health-note.warning .subsync-callout-mark { color: #a46b0c; }
+.subsync-health-note.ok { background: #eff9f3; border-color: #cee9d8; color: #48745a; }
+.subsync-health-note.ok strong, .subsync-health-note.ok .subsync-callout-mark { color: #39805a; }
+.subsync-health-note.neutral { background: #f1f5f9; border-color: #d7e0ea; color: #66758a; }
+.subsync-health-note.neutral strong, .subsync-health-note.neutral .subsync-callout-mark { color: #506b88; }
+
 .subsync-home-panel { background: #fff; border: 1px solid var(--subsync-line); border-radius: .65rem; overflow: hidden; }
 .subsync-panel-head { align-items: center; border-bottom: 1px solid var(--subsync-line-soft); display: flex; justify-content: space-between; padding: .75rem .85rem .65rem; }
 .subsync-panel-head h3 { color: #1f2c3b; font-size: .82rem; margin: 0; }
