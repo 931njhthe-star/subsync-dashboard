@@ -1,0 +1,42 @@
+{
+  "generated_at": "2026-09-06T12:00:00Z",
+  "users": [
+    {"id": "u-001", "email": "demo1@example.test", "created_at": "2026-08-20T09:00:00Z", "is_active": true, "level": "A2"},
+    {"id": "u-002", "email": "demo2@example.test", "created_at": "2026-08-22T10:00:00Z", "is_active": true, "level": "B1"},
+    {"id": "u-003", "email": "demo3@example.test", "created_at": "2026-08-30T11:00:00Z", "is_active": false, "level": "A1"},
+    {"id": "u-004", "email": "demo4@example.test", "created_at": "2026-09-02T13:00:00Z", "is_active": true, "level": "B2"}
+  ],
+  "video_history": [
+    {"id": "vh-001", "user_id": "u-001", "video_id": "vid-space", "video_title": "The Size of Space", "last_timestamp": 412.0, "watch_duration_sec": 1260, "created_at": "2026-09-01T09:30:00Z", "updated_at": "2026-09-05T09:30:00Z"},
+    {"id": "vh-002", "user_id": "u-002", "video_id": "vid-space", "video_title": "The Size of Space", "last_timestamp": 236.0, "watch_duration_sec": 840, "created_at": "2026-09-02T12:00:00Z", "updated_at": "2026-09-05T12:00:00Z"},
+    {"id": "vh-003", "user_id": "u-004", "video_id": "vid-habits", "video_title": "Small Habits, Big Results", "last_timestamp": 583.0, "watch_duration_sec": 1920, "created_at": "2026-09-03T08:00:00Z", "updated_at": "2026-09-06T08:00:00Z"},
+    {"id": "vh-004", "user_id": "u-001", "video_id": "vid-habits", "video_title": "Small Habits, Big Results", "last_timestamp": 112.0, "watch_duration_sec": 600, "created_at": "2026-09-04T15:00:00Z", "updated_at": "2026-09-06T15:00:00Z"}
+  ],
+  "saved_words": [
+    {"id": "sw-001", "user_id": "u-001", "word": "conceptualize", "meaning": "개념화하다", "video_id": "vid-space", "timestamp": 114.0, "context_sentence": "It is hard to conceptualize the size of space.", "created_at": "2026-09-03T09:12:00Z"},
+    {"id": "sw-002", "user_id": "u-002", "word": "scale", "meaning": "규모, 척도", "video_id": "vid-space", "timestamp": 208.0, "context_sentence": "The scale is beyond our imagination.", "created_at": "2026-09-04T11:30:00Z"},
+    {"id": "sw-003", "user_id": "u-004", "word": "consistent", "meaning": "일관된", "video_id": "vid-habits", "timestamp": 76.0, "context_sentence": "Small consistent actions compound over time.", "created_at": "2026-09-05T16:10:00Z"}
+  ],
+  "click_events": [
+    {"id": "ce-001", "user_id": "u-001", "word": "conceptualize", "video_id": "vid-space", "timestamp": 114.0, "context_sentence": "It is hard to conceptualize the size of space.", "created_at": "2026-09-03T09:12:00Z"},
+    {"id": "ce-002", "user_id": "u-002", "word": "scale", "video_id": "vid-space", "timestamp": 208.0, "context_sentence": "The scale is beyond our imagination.", "created_at": "2026-09-04T11:30:00Z"},
+    {"id": "ce-003", "user_id": "u-004", "word": "consistent", "video_id": "vid-habits", "timestamp": 76.0, "context_sentence": "Small consistent actions compound over time.", "created_at": "2026-09-05T16:10:00Z"},
+    {"id": "ce-004", "user_id": "u-001", "word": "scale", "video_id": "vid-space", "timestamp": 244.0, "context_sentence": "We need a new scale for comparison.", "created_at": "2026-09-05T17:00:00Z"}
+  ],
+  "tutor_messages": [
+    {"id": "tm-001", "conversation_id": "conv-001", "user_id": "u-001", "video_id": "vid-space", "sender": "user", "message": "Why is space so difficult to conceptualize?", "timestamp": 115.0, "provider": "stub", "model": "rule-based", "latency_ms": 0, "created_at": "2026-09-03T09:15:00Z"},
+    {"id": "tm-002", "conversation_id": "conv-001", "user_id": "u-001", "video_id": "vid-space", "sender": "tutor", "message": "The word conceptualize means to form a clear idea of something.", "timestamp": 115.0, "provider": "stub", "model": "rule-based", "latency_ms": 82, "created_at": "2026-09-03T09:15:01Z"},
+    {"id": "tm-003", "conversation_id": "conv-002", "user_id": "u-004", "video_id": "vid-habits", "sender": "user", "message": "What makes a habit stick?", "timestamp": 80.0, "provider": "stub", "model": "rule-based", "latency_ms": 0, "created_at": "2026-09-05T16:12:00Z"},
+    {"id": "tm-004", "conversation_id": "conv-002", "user_id": "u-004", "video_id": "vid-habits", "sender": "tutor", "message": "A habit becomes easier when the cue and reward are consistent.", "timestamp": 80.0, "provider": "stub", "model": "rule-based", "latency_ms": 96, "created_at": "2026-09-05T16:12:01Z"}
+  ],
+  "user_feedback": [
+    {"id": "fb-001", "message_id": "tm-002", "user_id": "u-001", "rating": "up", "reason": "clear", "created_at": "2026-09-03T09:16:00Z"},
+    {"id": "fb-002", "message_id": "tm-004", "user_id": "u-004", "rating": "up", "reason": "useful", "created_at": "2026-09-05T16:13:00Z"},
+    {"id": "fb-003", "message_id": "tm-002", "user_id": "u-002", "rating": "down", "reason": "too short", "created_at": "2026-09-05T17:20:00Z"}
+  ],
+  "system_logs": [
+    {"id": "log-001", "event_type": "tutor.ask", "user_id": "u-001", "video_id": "vid-space", "status_code": 200, "latency_ms": 82, "severity": "info", "message": "Tutor response completed", "created_at": "2026-09-03T09:15:01Z"},
+    {"id": "log-002", "event_type": "caption.fetch", "user_id": "u-002", "video_id": "vid-space", "status_code": 200, "latency_ms": 143, "severity": "info", "message": "Caption source loaded", "created_at": "2026-09-04T11:00:00Z"},
+    {"id": "log-003", "event_type": "tutor.ask", "user_id": "u-004", "video_id": "vid-habits", "status_code": 429, "latency_ms": 120, "severity": "warning", "message": "Provider quota fallback", "created_at": "2026-09-05T16:12:01Z"}
+  ]
+}

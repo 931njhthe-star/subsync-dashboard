@@ -1,0 +1,193 @@
+"""SubSync Streamlit 운영·분석 대시보드 진입점."""
+
+from __future__ import annotations
+
+import os
+from datetime import date, timedelta
+from pathlib import Path
+import sys
+
+import streamlit as st
+
+# Streamlit이 파일 경로로 실행될 때는 dashboard 폴더만 sys.path에 들어갈 수
+# 있으므로, 상위 프로젝트 루트를 명시적으로 import 경로에 등록한다.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _load_local_env_file() -> None:
+    """개발 환경의 루트 ``.env``를 서버 프로세스에만 주입한다.
+
+    배포 환경에서는 플랫폼 secret store가 우선하며, 이미 존재하는 환경변수는
+    덮어쓰지 않는다. 값은 화면·캐시·로그로 보내지 않는다.
+    """
+
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        name, separator, value = line.partition("=")
+        name = name.strip()
+        if not separator or not name.isidentifier() or name in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        os.environ[name] = value
+
+
+_load_local_env_file()
+
+from dashboard.analytics.data_loader import (
+    DashboardDataSourceError,
+    filter_by_date,
+    load_dashboard_data,
+    summarize_metrics,
+)
+from dashboard.components.admin_pages import (
+    render_ai_usage,
+    render_conversation_history,
+    render_user_management,
+    render_word_management,
+)
+from dashboard.components.display_labels import page_label, source_label
+from dashboard.components.home_dashboard import render_home_dashboard
+from dashboard.styles import inject_styles
+
+
+st.set_page_config(
+    page_title="SubSync 분석 대시보드",
+    page_icon="◈",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+inject_styles()
+
+
+def _source_label(source: str) -> str:
+    """내부 source 값을 사용자용 label로 변환한다."""
+
+    return source_label(source)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cached_data(supabase_url: str, supabase_key_configured: bool):
+    """Streamlit rerun 사이에 데이터 snapshot을 짧게 캐시한다.
+
+    원문 Supabase 키는 캐시 함수의 인자나 캐시 키에 넣지 않는다. 실제 키는
+    ``load_dashboard_data``가 서버 프로세스 환경에서만 읽는다.
+    """
+
+    # 설정 여부는 credential 유무가 바뀔 때 캐시 namespace를 구분하는 용도다.
+    _ = supabase_key_configured
+    return load_dashboard_data(
+        "supabase",
+        supabase_url=supabase_url or None,
+    )
+
+
+with st.sidebar:
+    st.markdown(
+        """
+        <div class="subsync-sidebar-brand">
+          <div class="subsync-sidebar-name">SubSync</div>
+          <div class="subsync-sidebar-desc">사용자와 AI 사용 현황을 한눈에<br/>더 나은 학습 경험을 위해</div>
+        </div>
+        <div class="subsync-sidebar-label">WORKSPACE</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    page = st.radio(
+        "화면",
+        ["Dashboard", "User Management", "AI Conversations", "Word Management", "AI Usage"],
+        format_func=page_label,
+        label_visibility="collapsed",
+    )
+    st.divider()
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    supabase_key_configured = bool(
+        os.getenv("SUPABASE_SECRET_KEY", "") or os.getenv("SUPABASE_KEY", "")
+    )
+    st.markdown("**데이터 원천**")
+    st.caption("수파베이스 (고정)")
+    st.caption("접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
+
+try:
+    data = cached_data(supabase_url, supabase_key_configured)
+except DashboardDataSourceError as exc:
+    st.error(f"Supabase 데이터를 불러오지 못했습니다: {exc}")
+    st.stop()
+
+available_dates = []
+for frame, column in [
+    (data.video_history, "updated_at"),
+    (data.click_events, "created_at"),
+    (data.tutor_messages, "created_at"),
+    (data.saved_words, "created_at"),
+    (data.login_history, "login_at"),
+    (data.ai_conversations, "started_at"),
+    (data.llm_usage, "used_at"),
+    (data.api_logs, "requested_at"),
+]:
+    if not frame.empty and column in frame and frame[column].notna().any():
+        available_dates.extend(frame[column].dropna().dt.date.tolist())
+
+max_date = max(available_dates) if available_dates else date.today()
+min_date = min(available_dates) if available_dates else max_date - timedelta(days=30)
+with st.sidebar:
+    selected_dates = st.date_input(
+        "조회 기간",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+    )
+
+if isinstance(selected_dates, tuple) and len(selected_dates) == 2:
+    start_date, end_date = selected_dates
+else:
+    start_date = end_date = selected_dates
+filtered_data = filter_by_date(data, start_date, end_date)
+metrics = summarize_metrics(filtered_data)
+
+st.markdown(
+    f"""
+    <div class="subsync-hero">
+      <div>
+        <div class="subsync-brand-line">SubSync <span class="subsync-brand-badge">Admin Dashboard</span></div>
+        <div class="subsync-eyebrow">SubSync / 분석</div>
+        <div class="subsync-title">학습 흐름을 한눈에 확인하세요.</div>
+        <div class="subsync-subtitle">영상 시청, 단어 학습, 비디오 튜터 품질을 하나의 화면에서 확인합니다.</div>
+      </div>
+      <div class="subsync-source">{_source_label(data.source)}</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+if page == "Dashboard":
+    render_home_dashboard(data, metrics)
+elif page == "User Management":
+    render_user_management(filtered_data)
+elif page == "AI Conversations":
+    render_conversation_history(filtered_data)
+elif page == "Word Management":
+    render_word_management(filtered_data)
+else:
+    render_ai_usage(filtered_data, metrics)
+
+st.divider()
+st.caption("SubSync 관리자 대시보드 · 서버 환경변수로 연결된 운영 데이터")
