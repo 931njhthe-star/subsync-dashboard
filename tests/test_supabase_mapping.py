@@ -261,6 +261,39 @@ def test_supabase_loader_uses_explicit_columns_and_paginates(monkeypatch) -> Non
         assert headers["Authorization"] == "Bearer test-key"
 
 
+def test_supabase_loader_uses_apikey_only_for_new_secret_key(monkeypatch) -> None:
+    captured_headers: list[dict[str, str]] = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return []
+
+    class FakeClient:
+        def __init__(self, *, timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def get(self, url, *, params, headers):
+            captured_headers.append(headers)
+            return FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", FakeClient)
+    load_supabase_data("https://example.supabase.co", "sb_secret_test-key")
+
+    assert captured_headers
+    assert all(headers == {"apikey": "sb_secret_test-key", "Accept": "application/json"}
+               for headers in captured_headers)
+
+
 @pytest.mark.parametrize("status_code", [401, 403, 500])
 def test_supabase_loader_reports_http_failures_without_response_body(
     monkeypatch, status_code: int

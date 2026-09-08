@@ -167,7 +167,7 @@ SUPABASE_TABLES = (
 # dashboard frame에서만 생성하고 PostgREST에 요청하지 않는다.
 SUPABASE_SELECT_COLUMNS: dict[str, tuple[str, ...]] = {
     "users": ("id", "google_account_id", "email", "created_at", "last_login_at"),
-    "login_history": ("id", "user_id", "login_at", "logout_at", "last_access_at", "login_success"),
+    "login_history": ("id", "user_id", "login_at", "logout_at", "last_access_at"),
     "saved_words": ("id", "user_id", "word", "saved_at"),
     "ai_conversations": ("id", "user_id", "video_id", "question", "answer", "started_at", "feedback"),
     "llm_usage": (
@@ -194,6 +194,7 @@ SUPABASE_SELECT_COLUMNS: dict[str, tuple[str, ...]] = {
 DEFAULT_SUPABASE_PAGE_SIZE = 1_000
 DEFAULT_SUPABASE_MAX_ROWS = 50_000
 DEFAULT_DEMO_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_data.json"
+NEW_SUPABASE_KEY_PREFIXES = ("sb_publishable_", "sb_secret_")
 
 
 class DashboardDataSourceError(RuntimeError):
@@ -524,7 +525,9 @@ def load_supabase_data(
     """
 
     if not url or not key:
-        raise DashboardDataSourceError("SUPABASE_URL과 SUPABASE_KEY가 필요합니다.")
+        raise DashboardDataSourceError(
+            "SUPABASE_URL과 SUPABASE_SECRET_KEY 또는 SUPABASE_KEY가 필요합니다."
+        )
     if limit < 1:
         raise DashboardDataSourceError("Supabase 페이지 크기는 1 이상이어야 합니다.")
     if max_rows is not None and max_rows < 1:
@@ -535,11 +538,15 @@ def load_supabase_data(
     except ImportError as exc:  # pragma: no cover - pyproject가 보장하는 경로
         raise DashboardDataSourceError("Supabase 연결에 httpx가 필요합니다.") from exc
 
+    # 새 publishable/secret key는 JWT가 아니므로 apikey 헤더만 사용한다.
+    # 기존 anon/service_role JWT와의 호환성을 위해 레거시 형식에는
+    # Authorization 헤더를 계속 붙인다.
     headers = {
         "apikey": key,
-        "Authorization": f"Bearer {key}",
         "Accept": "application/json",
     }
+    if not key.startswith(NEW_SUPABASE_KEY_PREFIXES):
+        headers["Authorization"] = f"Bearer {key}"
     base_url = url.rstrip("/")
     payload: dict[str, Any] = {}
 
@@ -637,7 +644,11 @@ def load_dashboard_data(
         return load_json(path)
     if mode in {"supabase", "auto"}:
         url = supabase_url or os.getenv("SUPABASE_URL", "")
-        key = supabase_key or os.getenv("SUPABASE_KEY", "")
+        key = (
+            supabase_key
+            or os.getenv("SUPABASE_SECRET_KEY", "")
+            or os.getenv("SUPABASE_KEY", "")
+        )
         if mode == "auto" and not (url and key):
             return load_demo_data(json_path)
         return load_supabase_data(url, key)

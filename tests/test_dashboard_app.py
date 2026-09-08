@@ -10,15 +10,22 @@ from streamlit.testing.v1 import AppTest
 DASHBOARD_APP = Path(__file__).parents[1] / "dashboard" / "app.py"
 
 
-def test_dashboard_demo_mode_renders_without_streamlit_exception() -> None:
+def test_dashboard_demo_mode_renders_without_streamlit_exception(monkeypatch) -> None:
+    # 개발자의 실제 .env가 live 모드여도 테스트는 샘플 fixture로 고정한다.
+    monkeypatch.setenv("SUBSYNC_DASHBOARD_SOURCE", "demo")
     app = AppTest.from_file(str(DASHBOARD_APP)).run(timeout=30)
 
     assert not app.exception
-    assert app.sidebar.radio[0].value == "Overview"
-    assert app.sidebar.selectbox[0].value == "demo"
+    assert app.sidebar.radio[0].value == "Dashboard"
+    assert len(app.sidebar.selectbox) == 0
     assert any("학습 흐름을 한눈에" in item.value for item in app.markdown)
-    assert app.sidebar.radio[0].options == ["개요", "학습 활동", "튜터 품질", "시스템 로그"]
-    assert app.sidebar.selectbox[0].options == ["샘플 데이터", "자동 선택", "자료 파일", "수파베이스"]
+    assert app.sidebar.radio[0].options == [
+        "대시보드",
+        "사용자 관리",
+        "AI 대화 내역",
+        "단어 관리",
+        "AI 사용량",
+    ]
 
 
 def test_dashboard_supabase_shaped_payload_renders_without_exception(monkeypatch) -> None:
@@ -83,7 +90,7 @@ def test_dashboard_supabase_shaped_payload_renders_without_exception(monkeypatch
     app = AppTest.from_file(str(DASHBOARD_APP)).run(timeout=30)
 
     assert not app.exception
-    assert app.sidebar.selectbox[0].value == "supabase"
+    assert len(app.sidebar.selectbox) == 0
     assert any("수파베이스" in item.value for item in app.markdown)
 
 
@@ -95,6 +102,7 @@ def test_dashboard_script_imports_when_launched_from_project_root() -> None:
 from pathlib import Path
 import runpy
 import sys
+import os
 
 backend_root = Path({str(backend_root)!r}).resolve()
 sys.path[:] = [
@@ -102,6 +110,7 @@ sys.path[:] = [
     if not entry or Path(entry).resolve() != backend_root
 ]
 sys.path.insert(0, str(Path({str(DASHBOARD_APP.parent)!r}).resolve()))
+os.environ["SUBSYNC_DASHBOARD_SOURCE"] = "demo"
 runpy.run_path({str(DASHBOARD_APP)!r}, run_name="__main__")
 """
     result = subprocess.run(

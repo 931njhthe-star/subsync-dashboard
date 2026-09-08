@@ -14,6 +14,11 @@ from dashboard.components.display_labels import (
 
 
 def test_navigation_and_source_labels_are_korean() -> None:
+    assert page_label("Dashboard") == "대시보드"
+    assert page_label("User Management") == "사용자 관리"
+    assert page_label("AI Conversations") == "AI 대화 내역"
+    assert page_label("Word Management") == "단어 관리"
+    assert page_label("AI Usage") == "AI 사용량"
     assert page_label("Overview") == "개요"
     assert page_label("Learning Activity") == "학습 활동"
     assert page_label("Tutor Quality") == "튜터 품질"

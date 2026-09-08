@@ -18,22 +18,19 @@ Supabase 접속 환경변수가 없으면 기본 화면은 저장소에 포함�
 
 ## 데이터 원천
 
-사이드바의 데이터 원천은 다음과 같이 동작합니다.
-
-- `demo`: 저장소의 샘플 자료
-- `json`: `SUBSYNC_DASHBOARD_JSON` 또는 화면에서 지정한 로컬 JSON 자료
-- `supabase`: 서버 프로세스 환경변수의 PostgREST에서 실제 운영 자료 조회
-- `auto`: `SUPABASE_URL`과 `SUPABASE_KEY`가 모두 있으면 Supabase, 없으면 샘플 자료
+이 대시보드는 Supabase를 유일한 데이터 원천으로 사용합니다. 사이드바의 데이터
+원천 선택 메뉴는 제공하지 않으며, 연결 실패 시 샘플 데이터로 대체하지 않고
+오류를 표시합니다. 조회 기간 필터는 모든 관리자 화면에 공통으로 적용됩니다.
 
 ```powershell
-# 실제 Supabase 자료를 사용하는 자동 모드
-$env:SUBSYNC_DASHBOARD_SOURCE = "auto"
+# 실제 Supabase 자료를 사용하는 모드
+$env:SUBSYNC_DASHBOARD_SOURCE = "supabase"
 $env:SUPABASE_URL = "https://xlzfuotapkdvyuqdmmxz.supabase.co"
-$env:SUPABASE_KEY = "<approved-server-side-read-key>"
+$env:SUPABASE_SECRET_KEY = "<sb_secret_server_key>"
 uv run streamlit run dashboard/app.py
 ```
 
-`SUPABASE_KEY`와 기타 비밀값은 대시보드 프로세스 환경변수 또는 배포 환경의 secret store에서만 주입합니다. `.env.example`은 변수명 예시일 뿐 애플리케이션이 `.env` 파일을 자동으로 읽지는 않습니다. 실제 키는 캐시 키·화면·브라우저·다운로드 파일에 넣지 않습니다. 현재 Supabase RLS는 인증된 사용자의 소유 row 조회 기준이므로, 전체 운영 데이터를 표시하려면 별도 승인된 서버 측 읽기 경계가 필요합니다. 서비스 키를 코드나 위젯에 넣지 않습니다.
+`SUPABASE_SECRET_KEY`와 기타 비밀값은 대시보드 프로세스 환경변수 또는 배포 환경의 secret store에서만 주입합니다. 로컬 개발에서는 프로젝트 루트 `.env`도 서버 프로세스 시작 시 읽습니다. 실제 키는 캐시 키·화면·브라우저·다운로드 파일·소스 저장소에 넣지 않습니다. 새 `sb_secret_...` 키는 서버 전용 고권한 키이므로, 외부에 배포할 때는 대시보드 자체도 관리자 인증이나 사내망으로 보호해야 합니다. 전체 운영 데이터를 표시하려면 별도 승인된 서버 측 읽기 경계를 우선 고려합니다. 레거시 `service_role` 키를 새 설정에 사용하지 않습니다.
 
 ## 실제 Supabase schema 매핑
 
@@ -52,10 +49,11 @@ uv run streamlit run dashboard/app.py
 
 ## 화면
 
-- **개요**: 활성 사용자, 시청 시간, 저장 단어, Tutor 질문과 일별 활동
-- **학습 활동**: 상위 학습 단어와 영상별 시청 시간
-- **Tutor 품질**: 평가 비율, 전체 Tutor API 응답시간, 오류율, provider·model별 사용량·토큰
-- **시스템 로그**: `api_logs` 기반 심각도·API 유형 필터와 로그 파일 내려받기
+- **대시보드**: 전체 사용자, AI 질문, 저장 단어, 평균 응답시간과 최근 활동
+- **사용자 관리**: 사용자 검색, 활성 상태 필터, 가입일·최근 접속일과 CSV 내보내기
+- **AI 대화 내역**: 사용자별 질문, 모델, 응답시간과 평가 기록
+- **단어 관리**: 저장 단어 검색, 사용자 필터와 CSV 내보내기
+- **AI 사용량**: 모델별 호출 수·토큰과 일별 사용 추이
 
 ## 구조
 

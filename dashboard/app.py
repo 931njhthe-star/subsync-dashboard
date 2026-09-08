@@ -15,18 +15,57 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dashboard.analytics.ai_quality_eval import feedback_breakdown, provider_summary
+
+def _load_local_env_file() -> None:
+    """개발 환경의 루트 ``.env``를 서버 프로세스에만 주입한다.
+
+    배포 환경에서는 플랫폼 secret store가 우선하며, 이미 존재하는 환경변수는
+    덮어쓰지 않는다. 값은 화면·캐시·로그로 보내지 않는다.
+    """
+
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        name, separator, value = line.partition("=")
+        name = name.strip()
+        if not separator or not name.isidentifier() or name in os.environ:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        elif " #" in value:
+            value = value.split(" #", 1)[0].rstrip()
+        os.environ[name] = value
+
+
+_load_local_env_file()
+
 from dashboard.analytics.data_loader import (
     DashboardDataSourceError,
     filter_by_date,
     load_dashboard_data,
     summarize_metrics,
 )
-from dashboard.analytics.user_patterns import daily_activity, top_words, video_summary
-from dashboard.components.display_labels import page_label, source_label, translate_frame_columns
-from dashboard.components.feedback_view import render_feedback
-from dashboard.components.kpi_metrics import render_kpi_grid
-from dashboard.components.realtime_logs import render_logs
+from dashboard.components.admin_pages import (
+    render_ai_usage,
+    render_conversation_history,
+    render_user_management,
+    render_word_management,
+)
+from dashboard.components.display_labels import page_label, source_label
+from dashboard.components.home_dashboard import render_home_dashboard
 from dashboard.styles import inject_styles
 
 
@@ -46,60 +85,52 @@ def _source_label(source: str) -> str:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def cached_data(source: str, json_path: str, supabase_url: str, supabase_key_configured: bool):
+def cached_data(supabase_url: str, supabase_key_configured: bool):
     """Streamlit rerun 사이에 데이터 snapshot을 짧게 캐시한다.
 
     원문 Supabase 키는 캐시 함수의 인자나 캐시 키에 넣지 않는다. 실제 키는
     ``load_dashboard_data``가 서버 프로세스 환경에서만 읽는다.
     """
 
-    # 설정 여부는 credential 유무가 바뀔 때 demo와 live 캐시 namespace를 구분하는 용도다.
+    # 설정 여부는 credential 유무가 바뀔 때 캐시 namespace를 구분하는 용도다.
     _ = supabase_key_configured
     return load_dashboard_data(
-        source,
-        json_path=json_path or None,
+        "supabase",
         supabase_url=supabase_url or None,
     )
 
 
 with st.sidebar:
-    st.markdown("### ◈ SubSync")
-    st.caption("학습 분석 운영 화면")
-    st.divider()
+    st.markdown(
+        """
+        <div class="subsync-sidebar-brand">
+          <div class="subsync-sidebar-name">SubSync</div>
+          <div class="subsync-sidebar-desc">사용자와 AI 사용 현황을 한눈에<br/>더 나은 학습 경험을 위해</div>
+        </div>
+        <div class="subsync-sidebar-label">WORKSPACE</div>
+        """,
+        unsafe_allow_html=True,
+    )
     page = st.radio(
         "화면",
-        ["Overview", "Learning Activity", "Tutor Quality", "System Logs"],
+        ["Dashboard", "User Management", "AI Conversations", "Word Management", "AI Usage"],
         format_func=page_label,
         label_visibility="collapsed",
     )
     st.divider()
     supabase_url = os.getenv("SUPABASE_URL", "")
-    supabase_key_configured = bool(os.getenv("SUPABASE_KEY", ""))
-    source_options = ["demo", "auto", "json", "supabase"]
-    configured_source = os.getenv("SUBSYNC_DASHBOARD_SOURCE", "").strip().lower()
-    if configured_source not in source_options:
-        configured_source = "auto" if supabase_url and supabase_key_configured else "demo"
-    source = st.selectbox(
-        "데이터 원천",
-        source_options,
-        index=source_options.index(configured_source),
-        format_func=source_label,
+    supabase_key_configured = bool(
+        os.getenv("SUPABASE_SECRET_KEY", "") or os.getenv("SUPABASE_KEY", "")
     )
-    json_path = st.text_input("자료 파일 경로", value="", disabled=source not in {"json", "demo"})
-    if source in {"auto", "supabase"}:
-        st.caption("수파베이스 접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
-    if configured_source == "demo" and not (supabase_url and supabase_key_configured):
-        st.caption("기본 모드는 로컬 샘플 자료입니다.")
+    st.markdown("**데이터 원천**")
+    st.caption("수파베이스 (고정)")
+    st.caption("접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
 
 try:
-    data = cached_data(source, json_path, supabase_url, supabase_key_configured)
-    source_error = None
+    data = cached_data(supabase_url, supabase_key_configured)
 except DashboardDataSourceError as exc:
-    source_error = str(exc)
-    data = cached_data("demo", "", "", False)
-
-if source_error:
-    st.warning(f"외부 데이터 원천을 사용할 수 없어 샘플 데이터로 표시합니다: {source_error}")
+    st.error(f"Supabase 데이터를 불러오지 못했습니다: {exc}")
+    st.stop()
 
 available_dates = []
 for frame, column in [
@@ -136,6 +167,7 @@ st.markdown(
     f"""
     <div class="subsync-hero">
       <div>
+        <div class="subsync-brand-line">SubSync <span class="subsync-brand-badge">Admin Dashboard</span></div>
         <div class="subsync-eyebrow">SubSync / 분석</div>
         <div class="subsync-title">학습 흐름을 한눈에 확인하세요.</div>
         <div class="subsync-subtitle">영상 시청, 단어 학습, 비디오 튜터 품질을 하나의 화면에서 확인합니다.</div>
@@ -146,65 +178,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if page == "Overview":
-    render_kpi_grid(metrics)
-    st.markdown("### 활동 개요")
-    activity = daily_activity(filtered_data)
-    if activity.empty:
-        st.info("선택한 기간에 활동 데이터가 없습니다.")
-    else:
-        chart = translate_frame_columns(
-            activity.set_index("date")[["watch_hours", "word_clicks", "tutor_questions"]],
-            "activity",
-        )
-        st.area_chart(chart, color=["#3f7ff5", "#66a0ff", "#93c5fd"])
-    left, right = st.columns(2)
-    with left:
-        st.markdown("#### 자주 학습한 단어")
-        st.dataframe(translate_frame_columns(top_words(filtered_data), "words"), width="stretch", hide_index=True)
-    with right:
-        st.markdown("#### 많이 본 영상")
-        st.dataframe(translate_frame_columns(video_summary(filtered_data), "videos"), width="stretch", hide_index=True)
-
-elif page == "Learning Activity":
-    st.markdown("### 학습 활동")
-    st.caption("저장 단어와 클릭 학습, 영상별 누적 시청시간을 분석합니다.")
-    left, right = st.columns([1.15, 1])
-    with left:
-        st.markdown("#### 단어 학습 순위")
-        words = top_words(filtered_data, limit=20)
-        if words.empty:
-            st.info("단어 활동 데이터가 없습니다.")
-        else:
-            word_chart = translate_frame_columns(words.set_index("word")[["clicks", "saves"]], "words")
-            st.bar_chart(word_chart, color=["#3f7ff5", "#93c5fd"])
-            st.dataframe(translate_frame_columns(words, "words"), width="stretch", hide_index=True)
-    with right:
-        st.markdown("#### 영상별 시청시간")
-        videos = video_summary(filtered_data, limit=20)
-        if videos.empty:
-            st.info("시청 기록이 없습니다.")
-        else:
-            video_chart = translate_frame_columns(videos.set_index("video_title")[["watch_hours"]], "videos")
-            st.bar_chart(video_chart, color="#3f7ff5")
-            st.dataframe(translate_frame_columns(videos, "videos"), width="stretch", hide_index=True)
-
-elif page == "Tutor Quality":
-    st.markdown("### 튜터 품질")
-    st.caption("튜터 만족도, 제공자·모델 사용량, 전체 튜터 API 응답시간을 확인합니다.")
-    quality_left, quality_right = st.columns(2)
-    with quality_left:
-        st.metric("도움됨 비율", "-" if metrics["tutor_helpful_rate"] is None else f"{metrics['tutor_helpful_rate']:.1f}%")
-        st.metric("평균 응답시간", "-" if metrics["avg_tutor_latency_ms"] is None else f"{metrics['avg_tutor_latency_ms']:.0f} 밀리초")
-    with quality_right:
-        st.metric("오류율", "-" if metrics["error_rate"] is None else f"{metrics['error_rate']:.1f}%")
-        st.metric("질문 수", f"{metrics['tutor_questions']:,}")
-    render_feedback(feedback_breakdown(filtered_data), provider_summary(filtered_data))
-
+if page == "Dashboard":
+    render_home_dashboard(data, metrics)
+elif page == "User Management":
+    render_user_management(filtered_data)
+elif page == "AI Conversations":
+    render_conversation_history(filtered_data)
+elif page == "Word Management":
+    render_word_management(filtered_data)
 else:
-    st.markdown("### 시스템 로그")
-    st.caption("백엔드 API 요청의 상태 코드·응답시간·오류를 확인합니다.")
-    render_logs(filtered_data.system_logs)
+    render_ai_usage(filtered_data)
 
 st.divider()
-st.caption("SubSync 분석 대시보드 · 안전한 샘플 분석 화면 · 실제 자료 연결은 환경변수로 전환")
+st.caption("SubSync 관리자 대시보드 · 서버 환경변수로 연결된 운영 데이터")
