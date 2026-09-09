@@ -52,6 +52,34 @@ def _load_local_env_file() -> None:
 
 _load_local_env_file()
 
+
+def _load_streamlit_secrets() -> None:
+    """배포 환경의 Streamlit secrets를 서버 환경변수처럼 사용한다.
+
+    로컬 ``.env``와 이미 주입된 환경변수를 우선하며, secret 값 자체는 화면·로그·
+    캐시에 넣지 않는다. Streamlit Cloud의 Advanced settings에 입력한 평문 키도
+    기존 데이터 로더가 같은 방식으로 읽을 수 있게 한다.
+    """
+
+    secret_names = (
+        "SUPABASE_URL",
+        "SUPABASE_SECRET_KEY",
+        "SUPABASE_KEY",
+    )
+    for name in secret_names:
+        if os.getenv(name, "").strip():
+            continue
+        try:
+            value = st.secrets.get(name, "")
+        except Exception:
+            # 로컬에서 secrets.toml이 없어도 기본 실행이 중단되지 않아야 한다.
+            continue
+        if value is not None and str(value).strip():
+            os.environ[name] = str(value).strip()
+
+
+_load_streamlit_secrets()
+
 from dashboard.analytics.data_loader import (
     DashboardDataSourceError,
     filter_by_date,
@@ -59,13 +87,17 @@ from dashboard.analytics.data_loader import (
     summarize_metrics,
 )
 from dashboard.components.admin_pages import (
+    render_api_calls,
     render_ai_usage,
-    render_conversation_history,
-    render_user_management,
-    render_word_management,
 )
-from dashboard.components.display_labels import page_label, source_label
+from dashboard.components.display_labels import page_label
 from dashboard.components.home_dashboard import render_home_dashboard
+from dashboard.dashboard_api import (
+    DEFAULT_DASHBOARD_API_TIMEOUT_SECONDS,
+    DEFAULT_DASHBOARD_API_URL,
+    DashboardApiError,
+    load_dashboard_api_snapshot,
+)
 from dashboard.styles import inject_styles
 
 
@@ -78,10 +110,7 @@ st.set_page_config(
 inject_styles()
 
 
-def _source_label(source: str) -> str:
-    """내부 source 값을 사용자용 label로 변환한다."""
-
-    return source_label(source)
+PAGE_OPTIONS = ["Dashboard", "AI Usage", "API Calls"]
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -100,6 +129,33 @@ def cached_data(supabase_url: str, supabase_key_configured: bool):
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def cached_dashboard_api_snapshot(
+    start_date_text: str,
+    end_date_text: str,
+    api_base_url: str,
+    timeout_seconds: float,
+):
+    """선택한 기간의 세 Dashboard API 응답을 짧게 캐시한다.
+
+    API snapshot에는 Supabase secret이 들어가지 않으며, 캐시 키에도 날짜·API 주소·
+    timeout만 포함한다. 상세 화면은 이 snapshot을 기존 DashboardData로 변환해
+    사용하므로 기존 UI를 제거하지 않는다.
+    """
+
+    try:
+        start_date = date.fromisoformat(start_date_text)
+        end_date = date.fromisoformat(end_date_text)
+    except ValueError as exc:
+        raise DashboardApiError("조회 날짜 형식이 올바르지 않습니다.") from exc
+    return load_dashboard_api_snapshot(
+        start_date,
+        end_date,
+        api_base_url=api_base_url,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 with st.sidebar:
     st.markdown(
         """
@@ -113,55 +169,111 @@ with st.sidebar:
     )
     page = st.radio(
         "화면",
-        ["Dashboard", "User Management", "AI Conversations", "Word Management", "AI Usage"],
+        PAGE_OPTIONS,
         format_func=page_label,
         label_visibility="collapsed",
+        key="page",
     )
     st.divider()
+
+source_mode = os.getenv("SUBSYNC_DASHBOARD_SOURCE", "dashboard_api").strip().lower()
+legacy_source = source_mode in {"legacy-supabase", "direct-supabase"}
+demo_source = source_mode == "demo"
+
+if demo_source or legacy_source:
     supabase_url = os.getenv("SUPABASE_URL", "")
     supabase_key_configured = bool(
         os.getenv("SUPABASE_SECRET_KEY", "") or os.getenv("SUPABASE_KEY", "")
     )
-    st.markdown("**데이터 원천**")
-    st.caption("수파베이스 (고정)")
-    st.caption("접속 정보는 대시보드 서버 환경변수에서 읽습니다.")
+    try:
+        if demo_source:
+            data = load_dashboard_data("demo")
+        else:
+            data = cached_data(supabase_url, supabase_key_configured)
+    except DashboardDataSourceError as exc:
+        st.error(f"Supabase 데이터를 불러오지 못했습니다: {exc}")
+        st.stop()
 
-try:
-    data = cached_data(supabase_url, supabase_key_configured)
-except DashboardDataSourceError as exc:
-    st.error(f"Supabase 데이터를 불러오지 못했습니다: {exc}")
-    st.stop()
+    available_dates = []
+    for frame, column in [
+        (data.video_history, "updated_at"),
+        (data.click_events, "created_at"),
+        (data.tutor_messages, "created_at"),
+        (data.saved_words, "created_at"),
+        (data.login_history, "login_at"),
+        (data.ai_conversations, "started_at"),
+        (data.llm_usage, "used_at"),
+        (data.api_logs, "requested_at"),
+    ]:
+        if not frame.empty and column in frame and frame[column].notna().any():
+            available_dates.extend(frame[column].dropna().dt.date.tolist())
+    max_date = max(available_dates) if available_dates else date.today()
+    min_date = min(available_dates) if available_dates else max_date - timedelta(days=30)
+else:
+    # FastAPI가 정확한 시작일·종료일을 받으므로 API 모드에서는 데이터 조회 전에
+    # 최근 90일 범위의 달력만 만든다. 선택된 날짜는 현재 화면 조회에 적용된다.
+    max_date = date.today()
+    min_date = max_date - timedelta(days=89)
 
-available_dates = []
-for frame, column in [
-    (data.video_history, "updated_at"),
-    (data.click_events, "created_at"),
-    (data.tutor_messages, "created_at"),
-    (data.saved_words, "created_at"),
-    (data.login_history, "login_at"),
-    (data.ai_conversations, "started_at"),
-    (data.llm_usage, "used_at"),
-    (data.api_logs, "requested_at"),
-]:
-    if not frame.empty and column in frame and frame[column].notna().any():
-        available_dates.extend(frame[column].dropna().dt.date.tolist())
 
-max_date = max(available_dates) if available_dates else date.today()
-min_date = min(available_dates) if available_dates else max_date - timedelta(days=30)
+def _period_widget_key(page_name: str) -> str:
+    """페이지별 날짜 입력 위젯 키를 만든다."""
+
+    return f"dashboard_period_widget_{page_name.lower().replace(' ', '_')}"
+
+
+period_values = st.session_state.setdefault("dashboard_period_values", {})
+default_period = (max(max_date - timedelta(days=6), min_date), max_date)
+if page not in period_values:
+    period_values[page] = default_period
+
 with st.sidebar:
     selected_dates = st.date_input(
-        "조회 기간",
-        value=(min_date, max_date),
+        f"{page_label(page)} 조회 기간",
+        value=period_values[page],
         min_value=min_date,
         max_value=max_date,
+        format="YYYY.MM.DD",
+        key=_period_widget_key(page),
+        help="현재 선택한 화면의 통계·그래프·상세 내역에 적용됩니다.",
     )
+    st.caption(f"{page_label(page)} 화면에만 적용 · 다른 화면의 기간은 유지됩니다")
 
-if isinstance(selected_dates, tuple) and len(selected_dates) == 2:
+period_values[page] = selected_dates
+
+if isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 2:
     start_date, end_date = selected_dates
 else:
     start_date = end_date = selected_dates
-filtered_data = filter_by_date(data, start_date, end_date)
-metrics = summarize_metrics(filtered_data)
+
+if demo_source or legacy_source:
+    filtered_data = filter_by_date(data, start_date, end_date)
+    metrics = summarize_metrics(filtered_data)
+else:
+    api_base_url = os.getenv("DASHBOARD_API_URL", DEFAULT_DASHBOARD_API_URL)
+    try:
+        api_timeout = float(
+            os.getenv(
+                "DASHBOARD_API_TIMEOUT_SECONDS",
+                str(DEFAULT_DASHBOARD_API_TIMEOUT_SECONDS),
+            )
+        )
+    except ValueError:
+        api_timeout = DEFAULT_DASHBOARD_API_TIMEOUT_SECONDS
+    try:
+        snapshot = cached_dashboard_api_snapshot(
+            start_date.isoformat(),
+            end_date.isoformat(),
+            api_base_url,
+            api_timeout,
+        )
+    except DashboardApiError as exc:
+        st.error(f"Dashboard API 데이터를 불러오지 못했습니다: {exc}")
+        st.info("FastAPI 서버가 https://subsync-backend-4bmh.onrender.com//에서 실행 중인지 확인해 주세요.")
+        st.stop()
+    filtered_data = snapshot.data
+    metrics = snapshot.metrics
+date_range_text = f"{start_date:%Y.%m.%d} ~ {end_date:%Y.%m.%d}"
 
 st.markdown(
     f"""
@@ -172,22 +284,26 @@ st.markdown(
         <div class="subsync-title">학습 흐름을 한눈에 확인하세요.</div>
         <div class="subsync-subtitle">영상 시청, 단어 학습, 비디오 튜터 품질을 하나의 화면에서 확인합니다.</div>
       </div>
-      <div class="subsync-source">{_source_label(data.source)}</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
+st.markdown(
+    f'''
+    <div class="subsync-filter-banner">
+      <strong>{page_label(page)} 조회 기간</strong><span>{date_range_text}</span>
+      <em>선택한 기간 기준으로 집계됨</em>
+    </div>
+    ''',
+    unsafe_allow_html=True,
+)
 
 if page == "Dashboard":
-    render_home_dashboard(data, metrics)
-elif page == "User Management":
-    render_user_management(filtered_data)
-elif page == "AI Conversations":
-    render_conversation_history(filtered_data)
-elif page == "Word Management":
-    render_word_management(filtered_data)
+    render_home_dashboard(filtered_data, metrics)
+elif page == "API Calls":
+    render_api_calls(filtered_data)
 else:
     render_ai_usage(filtered_data, metrics)
 
 st.divider()
-st.caption("SubSync 관리자 대시보드 · 서버 환경변수로 연결된 운영 데이터")
+st.caption("SubSync 관리자 대시보드 · FastAPI Dashboard API를 통해 연결된 운영 데이터")

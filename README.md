@@ -1,34 +1,43 @@
 # SubSync Dashboard
 
-SubSync의 내부 운영·분석용 Streamlit 대시보드입니다. Chrome Extension과 FastAPI backend와는 별도 프로세스·별도 저장소로 실행합니다.
+SubSync의 내부 운영·분석용 Streamlit 대시보드입니다. Chrome Extension과 FastAPI backend와는 별도 프로세스·별도 저장소로 실행합니다. 관리자 3개 화면은 FastAPI Dashboard API를 통해 통계와 상세 데이터를 조회하고, FastAPI가 Supabase를 읽습니다.
 
 ## 실행
 
 PowerShell:
 
 ```powershell
-Set-Location "C:\Users\Playdata\Desktop\프로젝트\subsync-dashboard\subsync-dashboard"
+Set-Location "C:\Users\Playdata\Desktop\project\subsync-dashboard"
 uv sync
 uv run streamlit run dashboard/app.py
 ```
 
 브라우저에서 `http://localhost:8501`을 엽니다.
 
-Supabase 접속 환경변수가 없으면 기본 화면은 저장소에 포함된 안전한 샘플 자료를 사용합니다. 샘플 자료는 실제 사용자 데이터로 표시하지 않습니다.
+FastAPI Dashboard API가 실행 중이지 않거나 연결 설정이 없으면 대시보드가 시작되지 않습니다. 샘플 화면이 필요할 때만 `SUBSYNC_DASHBOARD_SOURCE=demo`를 사용합니다.
 
-## 데이터 원천
+## 데이터 조회 흐름
 
-이 대시보드는 Supabase를 유일한 데이터 원천으로 사용합니다. 사이드바의 데이터
-원천 선택 메뉴는 제공하지 않으며, 연결 실패 시 샘플 데이터로 대체하지 않고
-오류를 표시합니다. 조회 기간 필터는 모든 관리자 화면에 공통으로 적용됩니다.
+세 관리자 화면은 다음 흐름으로 데이터를 조회합니다.
+
+```text
+Streamlit → FastAPI /api/v1/dashboard/* → Supabase
+```
+
+FastAPI 서버의 `.env`에는 Supabase 서버용 `SUPABASE_URL`과
+`SUPABASE_SECRET_KEY`를 설정합니다. Streamlit에는 Supabase 키를 넣지 않고
+`DASHBOARD_API_URL`만 설정합니다. 사이드바 조회 기간은 화면별로 따로 저장되며,
+현재 화면의 기간이 해당 Dashboard API 조회에 전달됩니다.
 
 ```powershell
-# 실제 Supabase 자료를 사용하는 모드
-$env:SUBSYNC_DASHBOARD_SOURCE = "supabase"
-$env:SUPABASE_URL = "https://xlzfuotapkdvyuqdmmxz.supabase.co"
-$env:SUPABASE_SECRET_KEY = "<sb_secret_server_key>"
+# FastAPI Dashboard API 모드
+$env:SUBSYNC_DASHBOARD_SOURCE = "dashboard_api"
+$env:DASHBOARD_API_URL = "https://subsync-backend-4bmh.onrender.com/"
 uv run streamlit run dashboard/app.py
 ```
+
+기존 Streamlit의 Supabase 직접 조회가 필요할 때만
+`SUBSYNC_DASHBOARD_SOURCE=legacy-supabase`를 사용할 수 있습니다.
 
 `SUPABASE_SECRET_KEY`와 기타 비밀값은 대시보드 프로세스 환경변수 또는 배포 환경의 secret store에서만 주입합니다. 로컬 개발에서는 프로젝트 루트 `.env`도 서버 프로세스 시작 시 읽습니다. 실제 키는 캐시 키·화면·브라우저·다운로드 파일·소스 저장소에 넣지 않습니다. 새 `sb_secret_...` 키는 서버 전용 고권한 키이므로, 외부에 배포할 때는 대시보드 자체도 관리자 인증이나 사내망으로 보호해야 합니다. 전체 운영 데이터를 표시하려면 별도 승인된 서버 측 읽기 경계를 우선 고려합니다. 레거시 `service_role` 키를 새 설정에 사용하지 않습니다.
 
@@ -49,11 +58,21 @@ uv run streamlit run dashboard/app.py
 
 ## 화면
 
-- **대시보드**: 전체 사용자, AI 질문, 저장 단어, 평균 응답시간과 최근 활동
-- **사용자 관리**: 사용자 검색, 활성 상태 필터, 가입일·최근 접속일과 CSV 내보내기
-- **AI 대화 내역**: 사용자별 질문, 모델, 응답시간과 평가 기록
-- **단어 관리**: 저장 단어 검색, 사용자 필터와 CSV 내보내기
-- **AI 사용량**: 모델별 호출 수·토큰과 일별 사용 추이
+- **대시보드**: 전체 사용자·AI 호출, 일별 사용량과 최근 AI 활동
+- **AI 사용량**: 모델·사용자 필터, 제공자별 호출량, 토큰·응답시간·오류율·P95와 일별 추이
+- **API 호출**: 엔드포인트별 호출량, 성공률·오류 요청·평균 latency와 최근 상태 코드
+
+## Dashboard API 기준
+
+관리자 화면은 FastAPI 문서에 정의된 다음 Dashboard API 응답만 사용합니다.
+
+- `/api/v1/dashboard/overview`: 홈 KPI와 최근 AI 활동
+- `/api/v1/dashboard/usage`: 모델별 토큰·호출·응답시간·오류율·일별 추이
+- `/api/v1/dashboard/api-calls`: 엔드포인트별 호출량·성공률·상태 코드·최근 요청
+
+화면에서 선택한 기간은 세 API에 함께 전달되며, AI 사용량의 모델·사용자 필터는
+조회된 응답 데이터에 적용됩니다. 별도의 Gemini·Grok API 키나 LLM 요약 호출은
+필요하지 않습니다.
 
 ## 구조
 

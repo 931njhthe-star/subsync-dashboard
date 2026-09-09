@@ -14,6 +14,7 @@ PAGE_LABELS: Mapping[str, str] = {
     "AI Conversations": "AI 대화 내역",
     "Word Management": "단어 관리",
     "AI Usage": "AI 사용량",
+    "API Calls": "API 호출",
     # 이전 분석 화면 키도 외부 호출·기존 테스트와의 호환성을 위해 유지한다.
     "Overview": "개요",
     "Learning Activity": "학습 활동",
@@ -60,7 +61,10 @@ RATING_LABELS: Mapping[str, str] = {
 PROVIDER_LABELS: Mapping[str, str] = {
     "stub": "기본 응답",
     "gemini": "제미나이",
+    "google": "제미나이",
     "groq": "그록",
+    "grok": "그록",
+    "xai": "그록",
     "unknown": "알 수 없음",
 }
 
