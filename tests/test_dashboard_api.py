@@ -127,7 +127,7 @@ def test_dashboard_api_snapshot_preserves_existing_data_contract(monkeypatch):
         and params["to_date"] == "2026-09-08"
         for _, params in calls
     )
-    assert calls[-1][1]["recent_limit"] == "50000"
+    assert calls[-1][1]["recent_limit"] == "100"
     assert len(snapshot.data.users) == 1
     assert len(snapshot.data.llm_usage) == 1
     assert len(snapshot.data.api_logs) == 1

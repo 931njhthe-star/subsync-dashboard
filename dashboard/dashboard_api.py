@@ -21,7 +21,7 @@ from dashboard.analytics.data_loader import (
 
 DEFAULT_DASHBOARD_API_URL = " https://subsync-backend-4bmh.onrender.com/"
 DEFAULT_DASHBOARD_API_TIMEOUT_SECONDS = 8.0
-MAX_API_CALL_ROWS = 50_000
+MAX_API_CALL_ROWS = 100
 
 
 class DashboardApiError(RuntimeError):
