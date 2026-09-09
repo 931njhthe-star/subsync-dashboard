@@ -61,7 +61,10 @@ RATING_LABELS: Mapping[str, str] = {
 PROVIDER_LABELS: Mapping[str, str] = {
     "stub": "기본 응답",
     "gemini": "제미나이",
+    "google": "제미나이",
     "groq": "그록",
+    "grok": "그록",
+    "xai": "그록",
     "unknown": "알 수 없음",
 }
 

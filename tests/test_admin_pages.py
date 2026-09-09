@@ -81,10 +81,10 @@ def test_usage_detail_keeps_tokens_latency_and_success_columns() -> None:
         "일시",
     ]
     assert detail.loc[0, "사용자"] == "admin@example.test"
-    assert detail.loc[0, "응답 시간"] == "40ms"
+    assert detail.loc[0, "응답 시간"] == "0.04s"
     assert detail.loc[0, "성공 여부"] == "성공"
 
 
 def test_precise_latency_does_not_round_subsecond_values_to_zero() -> None:
-    assert _latency_precise_text(40) == "40ms"
-    assert _latency_precise_text(1_250) == "1.25s (1,250ms)"
+    assert _latency_precise_text(40) == "0.04s"
+    assert _latency_precise_text(1_250) == "1.25s"

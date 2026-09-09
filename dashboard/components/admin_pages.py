@@ -10,12 +10,16 @@ import streamlit as st
 
 from dashboard.analytics.data_loader import DashboardData
 from dashboard.components.display_labels import provider_label, rating_label
-
-
 PAGE_COLUMNS = ["사용자", "질문 내용", "모델", "응답 시간", "일시", "평가"]
 MODEL_LABELS = {
     "gemini-3.6-flash": "Gemini 3.6 Flash",
     "gemini:3.6-flash": "Gemini 3.6 Flash",
+    "gemini-3.7-flash": "Gemini 3.7 Flash",
+    "gemini-flash-latest": "Gemini Flash",
+    "grok-4.6": "Grok 4.6",
+    "grok-4": "Grok 4",
+    "grok-3": "Grok 3",
+    "grok-3-mini": "Grok 3 Mini",
     "openai/gpt-oss-20b": "GPT-OSS 20B",
     "gpt-oss-20b": "GPT-OSS 20B",
 }
@@ -93,9 +97,9 @@ def _latency_precise_text(value: object) -> str:
         milliseconds = float(value)
     except (TypeError, ValueError):
         return "-"
-    if milliseconds >= 1_000:
-        return f"{milliseconds / 1_000:.2f}s ({milliseconds:,.0f}ms)"
-    return f"{milliseconds:,.0f}ms"
+    if milliseconds < 0:
+        return "-"
+    return f"{milliseconds / 1_000:.2f}s"
 
 
 def _column(frame: pd.DataFrame, name: str) -> pd.Series:
@@ -466,7 +470,7 @@ def _render_health_panel(data: DashboardData) -> dict[str, object]:
     """Supabase·AI API 상태와 마지막 갱신 시각을 표시한다."""
 
     api_health = _api_health(data)
-    supabase_status = "정상" if data.source == "supabase" else "확인 필요"
+    supabase_status = "정상" if data.source in {"supabase", "dashboard_api"} else "확인 필요"
     request_count = int(api_health["request_count"])
     failure_count = int(api_health["failure_count"])
     api_detail = (
@@ -474,8 +478,9 @@ def _render_health_panel(data: DashboardData) -> dict[str, object]:
         if request_count
         else "api_logs 데이터 없음"
     )
+    connection_detail = "FastAPI · Supabase" if data.source == "dashboard_api" else "Data API"
     cards = [
-        ("데이터 연결", supabase_status, "Data API"),
+        ("데이터 연결", supabase_status, connection_detail),
         ("AI API 상태", str(api_health["status"]), api_detail),
         ("마지막 갱신", _refresh_text(data.generated_at), "현재 snapshot"),
     ]
@@ -517,6 +522,24 @@ def _render_health_panel(data: DashboardData) -> dict[str, object]:
             unsafe_allow_html=True,
         )
     return api_health
+
+
+def _metric_with_description(
+    column: object,
+    label: str,
+    value: str,
+    description: str,
+    *,
+    help_text: str | None = None,
+) -> None:
+    """KPI 값과 짧은 설명을 한 묶음으로 표시한다."""
+
+    with column:
+        st.metric(label, value, help=help_text or description)
+        st.markdown(
+            f'<div class="subsync-metric-help">{escape(description)}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _api_success_series(frame: pd.DataFrame) -> pd.Series:
@@ -653,7 +676,7 @@ def _api_endpoint_summary(frame: pd.DataFrame) -> pd.DataFrame:
 def render_api_calls(data: DashboardData) -> None:
     """첨부 와이어프레임의 세 번째 화면인 API 호출을 표시한다."""
 
-    _heading(4, "API 호출", "엔드포인트별 호출량 및 응답 상태 확인")
+    _heading(3, "API 호출", "엔드포인트별 호출량 및 응답 상태 확인")
     _render_health_panel(data)
     frame = data.api_logs.copy()
     if frame.empty:
@@ -696,13 +719,18 @@ def render_api_calls(data: DashboardData) -> None:
         f"{failure_count:,}",
     )
     metric_columns = st.columns(4, gap="small")
-    for column, label, value in zip(
+    metric_descriptions = (
+        ("API 요청", "선택 기간 API 호출 수", "선택한 기간에 발생한 전체 요청 수"),
+        ("성공률", "정상 처리 비율", "정상 응답으로 처리된 요청 비율"),
+        ("평균 응답시간", "요청 1건의 평균 처리 시간", "API가 응답하기까지 걸린 평균 시간"),
+        ("오류 요청", "실패한 요청 수", "상태 코드 400 이상 또는 실패로 기록된 요청 수"),
+    )
+    for column, (label, description, help_text), value in zip(
         metric_columns,
-        ("API 요청", "성공률", "평균 latency", "오류 요청"),
+        metric_descriptions,
         metric_values,
     ):
-        with column:
-            st.metric(label, value)
+        _metric_with_description(column, label, value, description, help_text=help_text)
 
     st.markdown("#### 엔드포인트별 호출량")
     endpoint_counts = frame["_endpoint"].value_counts().sort_values(ascending=False)
@@ -936,13 +964,31 @@ def _render_daily_token_chart(daily: pd.Series) -> None:
     )
 
 
+def _usage_success_flags(frame: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """llm_usage의 finish_reason에서 관측 요청·실패 요청 마스크를 만든다."""
+
+    raw = _column(frame, "finish_reason")
+    reason_values = [
+        "" if _missing(value) else str(value).strip().lower()
+        for value in raw.tolist()
+    ]
+    reasons = pd.Series(reason_values, index=raw.index, dtype="object")
+    observed = reasons.ne("")
+    failed = observed & reasons.str.contains(
+        r"error|failed|failure|cancelled|canceled|timeout",
+        regex=True,
+        na=False,
+    )
+    return observed.astype(bool), failed.astype(bool)
+
+
 def render_ai_usage(
     data: DashboardData,
     metrics: Mapping[str, object] | None = None,
 ) -> None:
     """와이어프레임 형태의 AI 제공자 사용량·상세 요청 내역을 표시한다."""
 
-    _heading(3, "AI 사용량", "모델별 사용 현황 및 토큰 모니터링")
+    _heading(2, "AI 사용량", "모델별 사용 현황 및 토큰 모니터링")
     api_health = _render_health_panel(data)
     frame = data.llm_usage.copy()
     if frame.empty:
@@ -973,11 +1019,23 @@ def render_ai_usage(
     if selected_user != "전체 사용자":
         frame = frame.loc[frame["_user"].eq(selected_user)].copy()
 
-    error_rate_value = api_health["error_rate"]
-    if _missing(error_rate_value) and metrics:
-        error_rate_value = metrics.get("error_rate")
+    usage_observed, usage_failed = _usage_success_flags(frame)
+    if usage_observed.any():
+        error_rate_value = float(usage_failed.sum() / usage_observed.sum() * 100)
+    else:
+        error_rate_value = api_health["error_rate"]
+        if _missing(error_rate_value) and metrics:
+            error_rate_value = metrics.get("error_rate")
     error_rate_text = "-" if _missing(error_rate_value) else f"{float(error_rate_value):.1f}%"
-    p95_text = _latency_precise_text(api_health["p95_ms"])
+    usage_latencies = pd.to_numeric(
+        _column(frame, "provider_latency"), errors="coerce"
+    ).dropna()
+    usage_p95 = (
+        None if usage_latencies.empty else float(usage_latencies.quantile(0.95))
+    )
+    p95_text = _latency_precise_text(
+        usage_p95 if usage_p95 is not None else api_health["p95_ms"]
+    )
     total_requests = len(frame)
     total_tokens = int(frame["total_tokens"].sum())
     provider_latencies = pd.to_numeric(
@@ -1000,19 +1058,30 @@ def render_ai_usage(
             except (TypeError, ValueError):
                 average_latency = None
     metric_columns = st.columns(5, gap="small")
-    for column, label, value in zip(
-        metric_columns,
-        ("총 토큰 수", "평균 응답시간", "총 요청 수", "오류율", "P95 응답시간"),
+    metric_descriptions = (
+        ("총 토큰 수", "입력·출력 토큰 합계", "모델에 보낸 토큰과 받은 토큰의 합계"),
+        ("평균 응답시간", "모델 응답 평균", "모델이 응답하기까지 걸린 평균 시간"),
+        ("총 요청 수", "선택 기간 요청 수", "선택한 기간과 필터에 해당하는 요청 수"),
+        ("오류율", "실패 요청 비율", "전체 요청 중 실패한 요청의 비율"),
         (
-            f"{total_tokens:,}",
-            _latency_precise_text(average_latency),
-            f"{total_requests:,}",
-            error_rate_text,
-            p95_text,
+            "P95 응답시간",
+            "느린 요청 기준",
+            "전체 요청의 95%가 이 시간 안에 응답한 기준값",
         ),
+    )
+    metric_values = (
+        f"{total_tokens:,}",
+        _latency_precise_text(average_latency),
+        f"{total_requests:,}",
+        error_rate_text,
+        p95_text,
+    )
+    for column, (label, description, help_text), value in zip(
+        metric_columns,
+        metric_descriptions,
+        metric_values,
     ):
-        with column:
-            st.metric(label, value)
+        _metric_with_description(column, label, value, description, help_text=help_text)
 
     left, right = st.columns(2, gap="small")
     with left:

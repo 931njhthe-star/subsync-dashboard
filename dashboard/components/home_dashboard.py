@@ -102,7 +102,9 @@ def _latency_precise_label(value: object) -> str:
         milliseconds = float(value)
     except (TypeError, ValueError):
         return "-"
-    return f"{milliseconds / 1_000:.2f}s" if milliseconds >= 1_000 else f"{milliseconds:,.0f}ms"
+    if milliseconds < 0:
+        return "-"
+    return f"{milliseconds / 1_000:.2f}s"
 
 
 def _recent_ai_activity(data: DashboardData) -> pd.DataFrame:
@@ -241,8 +243,8 @@ def render_home_dashboard(data: DashboardData, metrics: Mapping[str, object]) ->
     if not ai_requests:
         ai_requests = len(data.llm_usage)
     kpi_values = [
-        ("전체 사용자", f"{total_users:,}", "전체 등록 사용자", "♙"),
-        ("AI 호출", f"{ai_requests:,}", "선택 기간의 AI 요청", "▣"),
+        ("조회 기간 사용자", f"{total_users:,}", "선택 기간 내 가입자", "♙"),
+        ("AI 호출", f"{ai_requests:,}", "선택 기간의 튜터 요청", "▣"),
     ]
     columns = st.columns(2, gap="small")
     for column, values in zip(columns, kpi_values):
