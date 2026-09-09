@@ -255,12 +255,6 @@ FastAPI backend가 Supabase 접근과 권한 경계를 담당합니다.
 - `429` API 응답이 존재하면 API 호출 화면에서 rate limit 경고를 표시합니다. backend의
   provider fallback·재시도·호출 제한 정책을 함께 확인합니다.
 
-## 관련 문서
-
-- [개발 진행 보고서](DEVELOPMENT_PROGRESS.md)
-- [샘플 데이터](dashboard/data/demo_data.json)
-- [환경 변수 예시](.env.example)
-- FastAPI backend Dashboard API 문서: backend 실행 후 `http://127.0.0.1:8000/docs`
 
 ## 변경 시 체크리스트
 
